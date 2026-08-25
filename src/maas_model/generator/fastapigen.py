@@ -13,7 +13,12 @@ OPENSEARCH_TO_PYDANTIC = {
     "double": "float",
     "boolean": "bool",
     "date": "datetime",
-    "ip": "IPvAnyAddress"
+    "ip": "IPvAnyAddress",
+}
+
+PYDANTIC_TYPE_IMPORTS = {
+    "datetime": "from datetime import datetime",
+    "IPvAnyAddress": "from pydantic import IPvAnyAddress",
 }
 
 
@@ -45,10 +50,8 @@ class SchemaGenerator:
 
             python_type = self._resolve_field_type(field.type_name)
 
-            if python_type == "datetime":
-                imports.add("from datetime import datetime")
-            elif python_type == "IPvAnyAddress":
-                imports.add("from pydantic import IPvAnyAddress")
+            if python_type in PYDANTIC_TYPE_IMPORTS:
+                imports.add(PYDANTIC_TYPE_IMPORTS[python_type])
 
             field_lines.append(f"    {field.name}: {python_type}")
 
