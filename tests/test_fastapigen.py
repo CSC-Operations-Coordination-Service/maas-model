@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from maas_model.generator.fastapigen import SchemaGenerator
+from maas_model.generator.fastapigen import SchemaGenerator, generate_schemas
 from maas_model.generator.meta import FieldMeta, ModelClassMeta
 
 

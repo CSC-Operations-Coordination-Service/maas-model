@@ -1,5 +1,7 @@
 """Generate FastAPI/Pydantic schemas from loaded model metadata."""
 
+import argparse
+from pathlib import Path
 from typing import List, Set
 
 from maas_model.generator.meta import ModelClassMeta
@@ -50,8 +52,10 @@ class SchemaGenerator:
 
             python_type = self._resolve_field_type(field.type_name)
 
-            if python_type in PYDANTIC_TYPE_IMPORTS:
-                imports.add(PYDANTIC_TYPE_IMPORTS[python_type])
+            if python_type == "datetime":
+                imports.add("from datetime import datetime")
+            elif python_type == "IPvAnyAddress":
+                imports.add("from pydantic import IPvAnyAddress")
 
             field_lines.append(f"    {field.name}: {python_type}")
 
@@ -77,3 +81,33 @@ class SchemaGenerator:
         lines.append("")
 
         return "\n".join(lines)
+
+
+def generate_schemas(template_directory: Path, output_directory: Path) -> List[Path]:
+    """Generate Pydantic schema modules from templates in a directory."""
+    generated_directory = output_directory / "schemas" / "generated"
+    generated_directory.mkdir(parents=True, exist_ok=True)
+
+    generated_paths: List[Path] = []
+    for template_path in sorted(template_directory.glob("*_template.json")):
+        meta = ModelClassMeta(str(template_path))
+        meta.load()
+
+        generated_source = SchemaGenerator(meta).generate()
+        module_name = template_path.name[: -len(ModelClassMeta.INDEX_SUFFIX)]
+        generated_path = generated_directory / f"{module_name}.py"
+        generated_path.write_text(generated_source, encoding="UTF-8")
+        generated_paths.append(generated_path)
+
+    return generated_paths
+
+
+def main() -> int:
+    """Generate Pydantic schema modules from MAAS index templates."""
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-d", "--directory", required=True, type=Path)
+    parser.add_argument("-o", "--output", required=True, type=Path)
+    arguments = parser.parse_args()
+
+    generate_schemas(arguments.directory, arguments.output)
+    return 0
