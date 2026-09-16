@@ -85,82 +85,81 @@ class SchemaGenerator:
         return "\n".join(lines)
 
 
-ROUTER_TEMPLATE = '''"""Generated CRUD router for __CLASS_NAME__.
+ROUTER_TEMPLATE = '''
+"""Generated CRUD router for __CLASS_NAME__.
 
-No persistence/OpenSearch logic yet: create/update/delete operate on a
-module-level dict keyed by a sequential id, as a placeholder until this
-router is wired up to the document.py DAO layer.
+Persists via maas_model.document_repository generic OpenSearch CRUD
+built on MAASDocument's existing API and converts between this schema and its
+sibling MAASDocument via maas_model.schema_adapter.
+
 """
 
-import itertools
-from typing import Dict, List
+from typing import List
 
 from fastapi import APIRouter, HTTPException, Response
 
+from maas_model.document_repository import (
+    create_document,
+    delete_document,
+    get_document,
+    list_documents,
+    update_document,
+)
+from maas_model.schema_adapter import document_to_schema, schema_to_document
+
 from __SCHEMA_MODULE__ import __CLASS_NAME__
+from __DOCUMENT_MODULE__ import __CLASS_NAME__ as __CLASS_NAME__Document
 
 router = APIRouter(prefix="/__RESOURCE__", tags=["__RESOURCE__"])
-
-_STORE: Dict[int, __CLASS_NAME__] = {}
-_ID_SEQUENCE = itertools.count(1)
 
 
 @router.get("/", response_model=List[__CLASS_NAME__])
 def list___RESOURCE__() -> List[__CLASS_NAME__]:
     """List all __CLASS_NAME__ resources."""
-    return list(_STORE.values())
+    documents = list_documents(__CLASS_NAME__Document)
+    return [document_to_schema(document, __CLASS_NAME__) for document in documents]
 
 
 @router.get("/{item_id}", response_model=__CLASS_NAME__)
 def get___RESOURCE__(item_id: int) -> __CLASS_NAME__:
     """Get a single __CLASS_NAME__ resource by id."""
-    try:
-        return _STORE[item_id]
-    except KeyError:
-        raise HTTPException(
-            status_code=404, detail="__CLASS_NAME__ not found"
-        ) from None
+    document = get_document(__CLASS_NAME__Document, item_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="__CLASS_NAME__ not found")
+    return document_to_schema(document, __CLASS_NAME__)
 
 
 @router.post("/", response_model=__CLASS_NAME__, status_code=201)
 def create___RESOURCE__(item: __CLASS_NAME__, response: Response) -> __CLASS_NAME__:
     """Create a new __CLASS_NAME__ resource."""
-    item_id = next(_ID_SEQUENCE)
-    _STORE[item_id] = item
-    response.headers["Location"] = f"/__RESOURCE__/{item_id}"
-    return item
+    document = create_document(schema_to_document(item, __CLASS_NAME__Document))
+    response.headers["Location"] = f"/__RESOURCE__/{document.meta.id}"
+    return document_to_schema(document, __CLASS_NAME__)
 
 
 @router.put("/{item_id}", response_model=__CLASS_NAME__)
 def update___RESOURCE__(item_id: int, item: __CLASS_NAME__) -> __CLASS_NAME__:
     """Replace an existing __CLASS_NAME__ resource."""
-    if item_id not in _STORE:
+    document = update_document(
+        __CLASS_NAME__Document, item_id, schema_to_document(item, __CLASS_NAME__Document)
+    )
+    if document is None:
         raise HTTPException(status_code=404, detail="__CLASS_NAME__ not found")
-    _STORE[item_id] = item
-    return item
+    return document_to_schema(document, __CLASS_NAME__)
 
 
 @router.delete("/{item_id}", status_code=204)
 def delete___RESOURCE__(item_id: int) -> Response:
     """Delete a __CLASS_NAME__ resource."""
-    try:
-        del _STORE[item_id]
-    except KeyError:
-        raise HTTPException(
-            status_code=404, detail="__CLASS_NAME__ not found"
-        ) from None
+    if not delete_document(__CLASS_NAME__Document, item_id):
+        raise HTTPException(status_code=404, detail="__CLASS_NAME__ not found")
     return Response(status_code=204)
 '''
 
 
 class RouterGenerator:
-    """Generate a minimal, in-memory CRUD FastAPI router source for a model.
-
-    Resource path and tag come from ``meta.index_name`` (e.g. ``processor``
-    -> ``/processor``); the imported schema is ``meta.class_name`` from
-    ``schemas.<index_name>`` -- the module ``SchemaGenerator`` writes for the
-    same template. No persistence/OpenSearch logic yet; see
-    ``ROUTER_TEMPLATE``.
+    """
+    Generate a CRUD FastAPI router source for a model.
     """
 
     def __init__(self, meta: ModelClassMeta):
@@ -170,9 +169,11 @@ class RouterGenerator:
         """Return the generated FastAPI router source as Python code."""
         resource = self.meta.index_name
         schema_module = f"schemas.{resource}"
+        document_module = f"documents.{resource}"
 
         return (
             ROUTER_TEMPLATE.replace("__SCHEMA_MODULE__", schema_module)
+            .replace("__DOCUMENT_MODULE__", document_module)
             .replace("__CLASS_NAME__", self.meta.class_name)
             .replace("__RESOURCE__", resource)
         )
@@ -183,19 +184,8 @@ def _load_and_render(
     generated_directory: Path,
     render: Callable[[ModelClassMeta], str],
 ) -> Path:
-    """Load a template's metadata, render it, and write the module.
-
-    Args:
-        render: takes the loaded ``ModelClassMeta`` and returns the module
-            source to write.
-
-    Returns:
-        The path written.
-
-    Raises:
-        ValueError: the template or its rendering is invalid (e.g. an
-            unsupported or nested field type).
-        OSError: the template can't be read or the module can't be written.
+    """
+    Load a template's metadata, render it, and write the module.
     """
     meta = ModelClassMeta(str(template_path))
     meta.load()
@@ -213,12 +203,12 @@ def generate_schemas(
     """Generate Pydantic schema modules from templates in a directory.
 
     A template that fails to parse or generate (e.g. an unsupported field
-    type, or a nested ``object`` field) is skipped rather than aborting the
+    type, or a nested object field) is skipped rather than aborting the
     whole batch, so one bad template doesn't block every other one.
 
     Returns:
-        A ``(generated_paths, errors)`` tuple: the schema files successfully
-        written, and any ``(template_path, exception)`` pairs for templates
+        A (generated_paths, errors) tuple: the schema files successfully
+        written, and any (template_path, exception) pairs for templates
         that failed.
     """
     generated_directory = output_directory / "schemas"
@@ -248,19 +238,19 @@ def generate_routers(
     output_directory: Path,
     available_modules: Optional[Set[str]] = None,
 ) -> Tuple[List[Path], List[Tuple[Path, Exception]]]:
-    """Generate FastAPI CRUD router modules from templates in a directory.
+    """
+    Generate FastAPI CRUD router modules from templates in a directory.
 
-    Written alongside the schemas, at ``<output>/routers/<model>.py``. Each
-    router imports its sibling schema module from ``schemas.<model>``, so a
-    template is only rendered here if its module name is in
-    ``available_modules`` -- the modules ``generate_schemas`` already wrote
-    successfully -- otherwise the router would import a schema that doesn't
-    exist. Pass ``None`` (the default) to generate a router for every
-    template regardless, e.g. when calling this directly without
-    ``generate_schemas``.
+    Written alongside the schemas, at <output>/routers/<model>.py.
+
+    Each router also imports a same-named MAASDocument class from
+    documents.<model> for persistence (see ``RouterGenerator``) -- that
+    module is NOT generated by this function (or by fastapigen at all); it
+    must come from pygen, placed at that path separately, for the
+    generated router to actually run.
 
     Returns:
-        Same ``(generated_paths, errors)`` shape as ``generate_schemas``.
+        Same (generated_paths, errors) shape as generate_schemas.
     """
     generated_directory = output_directory / "routers"
     generated_directory.mkdir(parents=True, exist_ok=True)
