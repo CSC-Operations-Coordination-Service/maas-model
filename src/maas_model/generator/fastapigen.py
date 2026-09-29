@@ -179,6 +179,18 @@ class RouterGenerator:
         )
 
 
+ROUTERS_INIT_TEMPLATE = '''"""Generated top-level router aggregating every resource router."""
+
+from fastapi import APIRouter
+
+__IMPORTS__
+
+router = APIRouter()
+
+__INCLUDES__
+'''
+
+
 def _load_and_render(
     template_path: Path,
     generated_directory: Path,
@@ -282,8 +294,33 @@ def generate_routers(
     return generated_paths, errors
 
 
+def generate_router_index(resources: List[str], output_directory: Path) -> Path:
+    """Generate routers/__init__.py, aggregating every resource router
+    into one top-level APIRouter.
+    """
+    generated_directory = output_directory / "routers"
+    generated_directory.mkdir(parents=True, exist_ok=True)
+
+    imports = "\n".join(
+        f"from routers.{resource} import router as {resource}_router"
+        for resource in resources
+    )
+    includes = "\n".join(
+        f"router.include_router({resource}_router)" for resource in resources
+    )
+
+    generated_source = ROUTERS_INIT_TEMPLATE.replace("__IMPORTS__", imports).replace(
+        "__INCLUDES__", includes
+    )
+
+    generated_path = generated_directory / "__init__.py"
+    generated_path.write_text(generated_source, encoding="UTF-8")
+    return generated_path
+
+
 def main() -> int:
-    """Generate Pydantic schemas and CRUD routers from MAAS index templates.
+    """Generate Pydantic schemas, CRUD routers, and the top-level router
+    index (routers/__init__.py) from MAAS index templates.
 
     Returns:
         0 if every template generated successfully, 1 if any were skipped.
@@ -299,8 +336,11 @@ def main() -> int:
         arguments.output,
         available_modules={path.stem for path in schema_paths},
     )
+    router_index_path = generate_router_index(
+        [path.stem for path in router_paths], arguments.output
+    )
 
-    for generated_path in (*schema_paths, *router_paths):
+    for generated_path in (*schema_paths, *router_paths, router_index_path):
         logging.info("Generated %s", generated_path)
 
     errors = schema_errors + router_errors
