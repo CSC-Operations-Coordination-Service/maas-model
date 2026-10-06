@@ -58,3 +58,4 @@ MANIFEST
 .venv*/
 .conda*/
 venv
+CLAUDE.local.md

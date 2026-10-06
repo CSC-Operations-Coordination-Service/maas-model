@@ -16,17 +16,32 @@ class ZuluDate(Date):
 
     _coerce = True
 
+    @staticmethod
+    def _format_zulu(value: datetime.datetime) -> str:
+        """Render a datetime as a strict Zulu-format string.
+
+        Built with plain string formatting rather than strftime: the
+        previous implementation used non-standard width/zero-pad strftime
+        directives (e.g. ``%04Y``) that are a glibc extension, they raise ValueError: Invalid format string
+        on platforms whose C runtime doesn't support them (e.g. Windows).
+        """
+        return (
+            f"{value.year:04d}-{value.month:02d}-{value.day:02d}T"
+            f"{value.hour:02d}:{value.minute:02d}:{value.second:02d}."
+            f"{value.microsecond // 1000:03d}Z"
+        )
+
     def _serialize(self, data):
         """convert data to ZULU format"""
 
         # common case
         if isinstance(data, datetime.datetime):
-            return data.strftime("%04Y-%02m-%02dT%02H:%02M:%S.%f")[:-3] + "Z"
+            return self._format_zulu(data)
 
         # less common
         if isinstance(data, str) and data[-1] != "Z":
             data = dateutil.parser.parse(data).astimezone(dateutil.tz.UTC)
-            return data.strftime("%04Y-%2m-%2dT%H:%M:%S.%f")[:-3] + "Z"
+            return self._format_zulu(data)
 
         return data
 

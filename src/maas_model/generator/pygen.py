@@ -11,6 +11,13 @@ from black import format_str, FileMode
 from maas_model.generator.meta import FieldMeta, ModelClassMeta
 
 
+def _escape_path(path: str) -> str:
+    """Escape backslashes in a template path before it's embedded in a
+    generated docstring.
+    """
+    return path.replace("\\", "\\\\")
+
+
 # pylint: disable=R0903
 # No method: just hold namespace
 class PythonCodeTemplate:
@@ -139,7 +146,10 @@ class ModelGenerator:
                 all_classes=", ".join(all_classes),
                 date=datetime.datetime.now(tz=datetime.UTC).isoformat(),
                 source_files="\n".join(
-                    [self.template.INDENT + f"- {path}" for path in self.path_list]
+                    [
+                        self.template.INDENT + f"- {_escape_path(path)}"
+                        for path in self.path_list
+                    ]
                 ),
                 base_classes=", ".join(sorted(self.used_base_classes)),
             )
@@ -164,7 +174,7 @@ class ModelGenerator:
             self.template.CLASS_TPL.format(
                 class_name=meta.class_name,
                 index_name=meta.index_name,
-                path=meta.path,
+                path=_escape_path(meta.path),
                 base_class=base_class,
             )
         ]
