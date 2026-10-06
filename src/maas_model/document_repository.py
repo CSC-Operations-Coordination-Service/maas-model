@@ -93,7 +93,7 @@ def list_documents(
 
 
 def get_document(
-    document_cls: Type[DocumentT], item_id: int, using: Optional[str] = None
+    document_cls: Type[DocumentT], item_id: str, using: Optional[str] = None
 ) -> Optional[DocumentT]:
     """Fetch one document of document_cls by its resource id.
 
@@ -103,7 +103,7 @@ def get_document(
 
     Args:
         document_cls: the MAASDocument subclass to fetch.
-        item_id: the router-facing integer id.
+        item_id: the document's OpenSearch _id (counter-issued or external).
         using: accepted for signature symmetry with the rest of this
             module; unused (see note above).
 
@@ -111,7 +111,7 @@ def get_document(
         The document, or None if no document has that id.
     """
     del using  # not supported by MAASDocument.get_by_id, see docstring
-    return document_cls.get_by_id(str(item_id), ignore_missing_index=True)
+    return document_cls.get_by_id(item_id, ignore_missing_index=True)
 
 
 def create_document(document: DocumentT, using: Optional[str] = None) -> DocumentT:
@@ -139,7 +139,7 @@ def create_document(document: DocumentT, using: Optional[str] = None) -> Documen
 
 def update_document(
     document_cls: Type[DocumentT],
-    item_id: int,
+    item_id: str,
     document: DocumentT,
     using: Optional[str] = None,
 ) -> Optional[DocumentT]:
@@ -148,7 +148,7 @@ def update_document(
 
     Args:
         document_cls: the MAASDocument subclass being updated.
-        item_id: the router-facing integer id of the document to replace.
+        item_id: the OpenSearch _id of the document to replace.
         document: the new content; its meta.id is overwritten.
         using: connection alias to use.
 
@@ -156,12 +156,12 @@ def update_document(
         document with its meta updated, or None if item_id
         doesn't exist (the caller/router should treat that as a 404).
     """
-    existing = document_cls.get_by_id(str(item_id), ignore_missing_index=True)
+    existing = document_cls.get_by_id(item_id, ignore_missing_index=True)
 
     if existing is None:
         return None
 
-    document.meta.id = str(item_id)
+    document.meta.id = item_id
     document.meta.index = existing.meta.index
     document.meta.seq_no = existing.meta.seq_no
     document.meta.primary_term = existing.meta.primary_term
@@ -173,7 +173,7 @@ def update_document(
 
 
 def delete_document(
-    document_cls: Type[DocumentT], item_id: int, using: Optional[str] = None
+    document_cls: Type[DocumentT], item_id: str, using: Optional[str] = None
 ) -> bool:
     """
     Delete a document by its resource id.
@@ -183,14 +183,14 @@ def delete_document(
 
     Args:
         document_cls: the MAASDocument subclass being deleted from.
-        item_id: the router-facing integer id of the document to delete.
+        item_id: the OpenSearch _id of the document to delete.
         using: connection alias to use.
 
     Returns:
         True if a document was deleted, False if item_id didn't
         exist (the caller/router should treat that as a 404).
     """
-    existing = document_cls.get_by_id(str(item_id), ignore_missing_index=True)
+    existing = document_cls.get_by_id(item_id, ignore_missing_index=True)
 
     if existing is None:
         return False

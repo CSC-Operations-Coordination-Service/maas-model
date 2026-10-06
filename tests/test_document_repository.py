@@ -98,7 +98,7 @@ def test_list_documents_delegates_to_search(monkeypatch):
 	assert list_documents(_TestDocument) == documents
 
 
-def test_get_document_casts_id_to_str_and_ignores_missing_index(monkeypatch):
+def test_get_document_passes_id_through_and_ignores_missing_index(monkeypatch):
 	calls = []
 
 	def fake_get_by_id(cls, document_id, **kwargs):
@@ -107,7 +107,7 @@ def test_get_document_casts_id_to_str_and_ignores_missing_index(monkeypatch):
 
 	monkeypatch.setattr(_TestDocument, "get_by_id", classmethod(fake_get_by_id))
 
-	result = get_document(_TestDocument, 5)
+	result = get_document(_TestDocument, "5")
 
 	assert result.name == "found"
 	assert calls == [("5", {"ignore_missing_index": True})]
@@ -118,7 +118,7 @@ def test_get_document_returns_none_when_not_found(monkeypatch):
 		_TestDocument, "get_by_id", classmethod(lambda cls, document_id, **kwargs: None)
 	)
 
-	assert get_document(_TestDocument, 999) is None
+	assert get_document(_TestDocument, "999") is None
 
 
 def test_create_document_assigns_id_and_bulk_writes(monkeypatch):
@@ -149,7 +149,7 @@ def test_update_document_returns_none_when_missing(monkeypatch):
 	fake_bulk = _FakeBulk()
 	monkeypatch.setattr(document_repository, "bulk", fake_bulk)
 
-	result = update_document(_TestDocument, 42, _TestDocument(name="new"))
+	result = update_document(_TestDocument, "42", _TestDocument(name="new"))
 
 	assert result is None
 	assert fake_bulk.calls == []
@@ -172,7 +172,7 @@ def test_update_document_copies_concurrency_meta_and_bulk_writes(monkeypatch):
 	monkeypatch.setattr(document_repository, "bulk", fake_bulk)
 
 	new_document = _TestDocument(name="new")
-	result = update_document(_TestDocument, 42, new_document)
+	result = update_document(_TestDocument, "42", new_document)
 
 	assert result is new_document
 	assert new_document.meta.id == "42"
@@ -196,7 +196,7 @@ def test_delete_document_returns_false_when_missing(monkeypatch):
 	fake_bulk = _FakeBulk()
 	monkeypatch.setattr(document_repository, "bulk", fake_bulk)
 
-	assert delete_document(_TestDocument, 1) is False
+	assert delete_document(_TestDocument, "1") is False
 	assert fake_bulk.calls == []
 
 
@@ -213,7 +213,7 @@ def test_delete_document_bulk_deletes_when_found(monkeypatch):
 	fake_bulk = _FakeBulk()
 	monkeypatch.setattr(document_repository, "bulk", fake_bulk)
 
-	assert delete_document(_TestDocument, 1) is True
+	assert delete_document(_TestDocument, "1") is True
 	assert len(fake_bulk.calls) == 1
 	_, actions = fake_bulk.calls[0]
 	assert actions[0] == {"_id": "1", "_index": "widget", "_op_type": "delete"}

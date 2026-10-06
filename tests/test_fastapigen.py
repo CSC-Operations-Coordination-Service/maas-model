@@ -170,16 +170,16 @@ def test_router_generator_source_shape(tmp_path):
 	assert "def list_widget() -> List[Widget]:" in source
 	assert "list_documents(WidgetDocument)" in source
 
-	assert "def get_widget(item_id: int) -> Widget:" in source
+	assert "def get_widget(item_id: str) -> Widget:" in source
 	assert "get_document(WidgetDocument, item_id)" in source
 
 	assert "def create_widget(item: Widget, response: Response) -> Widget:" in source
 	assert "create_document(schema_to_document(item, WidgetDocument))" in source
 
-	assert "def update_widget(item_id: int, item: Widget) -> Widget:" in source
+	assert "def update_widget(item_id: str, item: Widget) -> Widget:" in source
 	assert "update_document(" in source
 
-	assert "def delete_widget(item_id: int) -> Response:" in source
+	assert "def delete_widget(item_id: str) -> Response:" in source
 	assert "delete_document(WidgetDocument, item_id)" in source
 
 
@@ -306,85 +306,106 @@ def _install_fake_persistence(document_cls, monkeypatch):
 		classmethod(lambda cls, using=None, index=None: _FakeSearch()),
 	)
 	monkeypatch.setattr(document_repository, "bulk", fake_bulk)
+	return store
 
 
-def test_generated_schema_and_router_serve_crud(tmp_path, monkeypatch):
+@pytest.mark.parametrize("index_name", ["widget", "dm-widget"])
+def test_generated_schema_and_router_serve_crud(index_name, tmp_path, monkeypatch):
 	"""End-to-end: generate real schema/router/pygen-document files, import
 	them, and drive the full CRUD flow through real HTTP calls -- only the
 	OpenSearch network boundary is faked (see ``_install_fake_persistence``).
+
+	``dm-widget`` covers kebab-case index names (e.g. raw-data-dm-cdse-product):
+	modules/identifiers use underscores, the URL keeps the hyphens.
 	"""
 	fastapi = pytest.importorskip("fastapi")
 	testclient = pytest.importorskip("fastapi.testclient")
 
 	templates_dir = tmp_path / "templates"
 	templates_dir.mkdir()
-	template_path = templates_dir / "widget_template.json"
+	template_path = templates_dir / f"{index_name}_template.json"
 	_write_widget_template(template_path)
+	meta = ModelClassMeta(str(template_path))
+	module, class_name = meta.module_name, meta.class_name
 
 	output_dir = tmp_path / "generated"
 	schema_paths, schema_errors = generate_schemas(templates_dir, output_dir)
-	_, router_errors = generate_routers(
+	router_paths, router_errors = generate_routers(
 		templates_dir,
 		output_dir,
 		available_modules={path.stem for path in schema_paths},
 	)
 	assert not schema_errors
 	assert not router_errors
+	generate_router_index([path.stem for path in router_paths], output_dir)
 
 	# The router also expects a sibling pygen-generated Document module at
-	# documents.<model> (fastapigen doesn't generate this -- see
+	# documents.<module> (fastapigen doesn't generate this -- see
 	# RouterGenerator's docstring). Generate it for real via pygen, at the
 	# documented naming convention, to prove that convention actually works.
 	documents_dir = output_dir / "documents"
 	documents_dir.mkdir(parents=True, exist_ok=True)
 	document_source = generate_pygen(str(template_path))
-	(documents_dir / "widget.py").write_text(document_source, encoding="UTF-8")
+	(documents_dir / f"{module}.py").write_text(document_source, encoding="UTF-8")
 
 	for module_name in (
 		"schemas",
-		"schemas.widget",
+		f"schemas.{module}",
 		"routers",
-		"routers.widget",
+		f"routers.{module}",
 		"documents",
-		"documents.widget",
+		f"documents.{module}",
 	):
 		monkeypatch.delitem(sys.modules, module_name, raising=False)
 
 	monkeypatch.syspath_prepend(str(output_dir))
 	importlib.invalidate_caches()
 
-	document_module = importlib.import_module("documents.widget")
-	_install_fake_persistence(document_module.Widget, monkeypatch)
+	document_cls = getattr(importlib.import_module(f"documents.{module}"), class_name)
+	store = _install_fake_persistence(document_cls, monkeypatch)
 
-	router_module = importlib.import_module("routers.widget")
+	# the aggregate index is what an app actually mounts
+	routers_package = importlib.import_module("routers")
 
 	app = fastapi.FastAPI()
-	app.include_router(router_module.router)
+	app.include_router(routers_package.router)
 	client = testclient.TestClient(app)
+	url = f"/{index_name}"
 
-	assert client.get("/widget/").json() == []
+	assert client.get(f"{url}/").json() == []
 
 	payload = {"id": "w1", "name": "left-flange"}
-	create_response = client.post("/widget/", json=payload)
+	create_response = client.post(f"{url}/", json=payload)
 	assert create_response.status_code == 201
-	item_id = create_response.headers["location"].rsplit("/", 1)[-1]
-	assert item_id == "1"  # first id issued by the fake counter
+	assert create_response.headers["location"] == f"{url}/1"  # fake counter
 	assert create_response.json() == payload
 
-	get_response = client.get(f"/widget/{item_id}")
+	get_response = client.get(f"{url}/1")
 	assert get_response.status_code == 200
 	assert get_response.json()["name"] == "left-flange"
 
-	assert len(client.get("/widget/").json()) == 1
+	assert len(client.get(f"{url}/").json()) == 1
 
 	updated_payload = {"id": "w1", "name": "right-flange"}
-	put_response = client.put(f"/widget/{item_id}", json=updated_payload)
+	put_response = client.put(f"{url}/1", json=updated_payload)
 	assert put_response.status_code == 200
 	assert put_response.json()["name"] == "right-flange"
 
-	delete_response = client.delete(f"/widget/{item_id}")
+	delete_response = client.delete(f"{url}/1")
 	assert delete_response.status_code == 204
 
-	assert client.get(f"/widget/{item_id}").status_code == 404
-	assert client.put(f"/widget/{item_id}", json=updated_payload).status_code == 404
-	assert client.delete(f"/widget/{item_id}").status_code == 404
+	assert client.get(f"{url}/1").status_code == 404
+	assert client.put(f"{url}/1", json=updated_payload).status_code == 404
+	assert client.delete(f"{url}/1").status_code == 404
+
+	# documents written outside the API (collector/engine) carry string _ids
+	# that never came from the id-counters index -- they must be reachable too
+	external_id = "S1A_IW_GRDH_1SDV_20260101T000000"
+	store[external_id] = document_cls(
+		meta={"id": external_id, "index": index_name}, id="p1", name="product"
+	)
+	external_response = client.get(f"{url}/{external_id}")
+	assert external_response.status_code == 200
+	assert external_response.json()["name"] == "product"
+	assert client.delete(f"{url}/{external_id}").status_code == 204
+	assert external_id not in store
