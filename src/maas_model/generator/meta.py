@@ -45,6 +45,9 @@ class ModelClassMeta:
 
         self.index_name = os.path.basename(path)[: -len(self.INDEX_SUFFIX)]
 
+        # index names are kebab-case, python module/identifier names can't be
+        self.module_name = self.index_name.replace("-", "_")
+
         self.is_raw_data = self.index_name.startswith(self.RAW_DATA_PREFIX)
 
         if self.is_raw_data:
@@ -80,7 +83,7 @@ class ModelClassMeta:
         type_name = "".join(word.title() for word in prop["type"].split("_"))
         # inspect recursively sub properties on object type
         properties: list = []
-        if type_name == "Object":
+        if "properties" in prop:
             for inner_name, inner_prop in prop["properties"].items():
                 self.add_field(properties, inner_name, inner_prop)
 
