@@ -68,8 +68,7 @@ def _write_widget_template_with_every_type(path):
 
 
 def _write_nested_widget_template(path):
-	# Nested `object` fields aren't supported by SchemaGenerator yet --
-	# used to test both the schema-generator error path and router gating.
+	"""One `object` and one `nested` field, for sub-model generation."""
 	template = {
 		"mappings": {
 			"properties": {
@@ -78,9 +77,19 @@ def _write_nested_widget_template(path):
 					"type": "object",
 					"properties": {"source": {"type": "keyword"}},
 				},
+				"items": {
+					"type": "nested",
+					"properties": {"score": {"type": "float"}},
+				},
 			}
 		}
 	}
+	path.write_text(json.dumps(template), encoding="UTF-8")
+
+
+def _write_unsupported_widget_template(path):
+	"""A field type fastapigen doesn't map -- schema generation fails."""
+	template = {"mappings": {"properties": {"footprint": {"type": "geo_shape"}}}}
 	path.write_text(json.dumps(template), encoding="UTF-8")
 
 
@@ -100,7 +109,7 @@ def test_schema_generator_maps_every_supported_type(tmp_path):
 
 	assert meta.class_name == "Widget"
 	assert "from pydantic import BaseModel" in source
-	assert "from datetime import datetime" in source
+	assert "from maas_model.schema_adapter import ApiDate" in source
 	assert "from pydantic import IPvAnyAddress" in source
 	assert "class Widget(BaseModel):" in source
 
@@ -120,8 +129,8 @@ def test_schema_generator_maps_every_supported_type(tmp_path):
 	# boolean -> bool
 	assert "    enabled: bool" in source
 
-	# date -> datetime
-	assert "    created_at: datetime" in source
+	# date -> ApiDate (day-first / empty-string aware datetime)
+	assert "    created_at: ApiDate" in source
 
 
 def test_schema_generator_unsupported_type_raises_value_error():
@@ -132,15 +141,27 @@ def test_schema_generator_unsupported_type_raises_value_error():
 		SchemaGenerator(meta).generate()
 
 
-def test_schema_generator_nested_object_raises_value_error(tmp_path):
+def test_schema_generator_nested_fields_generate_sub_models(tmp_path):
 	tpl = tmp_path / "widget_template.json"
 	_write_nested_widget_template(tpl)
 
 	meta = ModelClassMeta(str(tpl))
 	meta.load()
 
-	with pytest.raises(ValueError, match="Nested object fields are not supported"):
-		SchemaGenerator(meta).generate()
+	source = SchemaGenerator(meta).generate()
+
+	assert "    metadata: WidgetMetadata" in source  # object -> sub-model
+	assert "    items: List[WidgetItems]" in source  # nested -> list of sub-models
+	assert "from typing import List" in source
+
+	# generated source actually runs: sub-models defined before Widget
+	namespace = {}
+	exec(source, namespace)
+	widget = namespace["Widget"](
+		id="1", metadata={"source": "api"}, items=[{"score": 0.5}]
+	)
+	assert widget.metadata.source == "api"
+	assert widget.items[0].score == 0.5
 
 
 # ---------------------------------------------------------------------------
@@ -187,7 +208,7 @@ def test_generate_routers_skips_templates_whose_schema_failed(tmp_path):
 	templates_dir = tmp_path / "templates"
 	templates_dir.mkdir()
 	_write_widget_template(templates_dir / "widget_template.json")
-	_write_nested_widget_template(templates_dir / "broken_template.json")
+	_write_unsupported_widget_template(templates_dir / "broken_template.json")
 
 	output_dir = tmp_path / "generated"
 
@@ -198,7 +219,7 @@ def test_generate_routers_skips_templates_whose_schema_failed(tmp_path):
 		available_modules={path.stem for path in schema_paths},
 	)
 
-	# widget's schema succeeds, broken's fails (nested object)
+	# widget's schema succeeds, broken's fails (unsupported geo_shape field)
 	assert [path.stem for path in schema_paths] == ["widget"]
 	assert [path.name for path, _ in schema_errors] == ["broken_template.json"]
 
