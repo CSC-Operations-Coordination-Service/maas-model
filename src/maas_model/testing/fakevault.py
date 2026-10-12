@@ -162,9 +162,17 @@ class FakeVault:
                 )
 
             def do_GET(self):  # pylint: disable=C0103
-                """KV v2 read of the latest version"""
+                """token lookup and KV v2 read of the latest version"""
                 if not vault.available:
                     self._reply(503, {"errors": ["Vault is sealed"]})
+                    return
+
+                if self.path.split("?")[0] == "/v1/auth/token/lookup-self":
+                    if self.headers.get("X-Vault-Token") not in vault.valid_tokens:
+                        self._reply(403, {"errors": ["permission denied"]})
+                        return
+
+                    self._reply(200, {"data": {"policies": ["default", "maas"]}})
                     return
 
                 kv_path = self._kv_path()

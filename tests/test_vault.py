@@ -71,13 +71,33 @@ def test_read_secret_logs_in_again_when_its_token_expired(fake_vault, settings):
     assert fake_vault.logins == 2
 
 
-def test_read_secret_gives_up_after_one_new_login(fake_vault, settings):
-    """a policy that denies the read must not end up in a login loop"""
+def test_read_secret_does_not_log_in_again_when_the_policy_denies_it(
+    fake_vault, settings
+):
+    """a valid token refused by the policy is not an expired token: a new login
+    would be refused the same way"""
     fake_vault.put("secret", "maas/cds/opensearch", OPENSEARCH)
+    fake_vault.denied.add("secret/maas/cds/opensearch")
+    client = VaultClient(settings)
+
+    for _ in range(3):
+        with pytest.raises(hvac.exceptions.Forbidden):
+            client.read_secret("maas/cds/opensearch")
+
+    assert fake_vault.logins == 1
+
+
+def test_read_secret_gives_up_after_one_new_login(fake_vault, settings):
+    """an expired token followed by a policy denial must not loop on logins"""
+    fake_vault.put("secret", "maas/cds/opensearch", OPENSEARCH)
+    client = VaultClient(settings)
+    client.read_secret("maas/cds/opensearch")
+
+    fake_vault.expire_tokens()
     fake_vault.denied.add("secret/maas/cds/opensearch")
 
     with pytest.raises(hvac.exceptions.Forbidden):
-        VaultClient(settings).read_secret("maas/cds/opensearch")
+        client.read_secret("maas/cds/opensearch")
 
     assert fake_vault.logins == 2
 
@@ -115,6 +135,15 @@ def test_token_authentication_with_a_token_file(fake_vault, tmp_path):
     )
 
     assert client.read_secret("maas/cds/opensearch") == OPENSEARCH
+
+
+def test_token_authentication_needs_a_token(fake_vault, monkeypatch, tmp_path):
+    monkeypatch.delenv("VAULT_TOKEN", raising=False)
+    # hvac also reads ~/.vault-token
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    with pytest.raises(ValueError, match="VAULT_TOKEN.*VAULT_TOKEN_FILE"):
+        VaultClient(VaultSettings(url=fake_vault.url, auth_method="token"))
 
 
 def test_token_authentication_with_vault_token(fake_vault, monkeypatch):

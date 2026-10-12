@@ -77,8 +77,18 @@ class VaultClient:
 
         self.settings = settings
 
-        # TLS verification follows VAULT_CACERT / VAULT_CAPATH like the vault CLI
+        # TLS verification follows VAULT_CACERT / VAULT_CAPATH like the vault CLI.
+        # The token comes from VAULT_TOKEN or ~/.vault-token, like the vault CLI
         self.client = hvac.Client(url=settings.url)
+
+        if (
+            settings.auth_method == "token"
+            and not settings.token_file
+            and not self.client.token
+        ):
+            raise ValueError(
+                "Vault token authentication needs VAULT_TOKEN or VAULT_TOKEN_FILE"
+            )
 
         self._logged_in = False
 
@@ -103,6 +113,7 @@ class VaultClient:
             path (str): path of the secret in the KV engine, without the mount point
 
         Raises:
+            hvac.exceptions.Forbidden: when the policy does not allow the read
             hvac.exceptions.VaultError: when the vault refuses or fails the read
 
         Returns:
@@ -115,8 +126,11 @@ class VaultClient:
             return self._read(path)
 
         except hvac.exceptions.Forbidden:
-            # most of the time the token expired. Retry once with a new one
-            LOGGER.info("Vault refused the token, logging in again")
+            # a valid token refused by the policy: a new login would be refused too
+            if self.client.is_authenticated():
+                raise
+
+            LOGGER.info("Vault token expired, logging in again")
             self.login()
             return self._read(path)
 
