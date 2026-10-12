@@ -28,7 +28,8 @@ def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> Sch
 
     data = {name: getattr(document, name) for name in field_names}
 
-    return schema_cls(**data)
+    # from_attributes: nested values load from OpenSearch as InnerDoc, not dict
+    return schema_cls.model_validate(data, from_attributes=True)
 
 
 def schema_to_document(
