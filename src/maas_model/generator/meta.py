@@ -83,7 +83,7 @@ class ModelClassMeta:
         type_name = "".join(word.title() for word in prop["type"].split("_"))
         # inspect recursively sub properties on object type
         properties: list = []
-        if type_name == "Object":
+        if "properties" in prop:
             for inner_name, inner_prop in prop["properties"].items():
                 self.add_field(properties, inner_name, inner_prop)
 

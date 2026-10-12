@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Callable, List, Optional, Set, Tuple
 
-from maas_model.generator.meta import ModelClassMeta
+from maas_model.generator.meta import FieldMeta, ModelClassMeta
 
 OPENSEARCH_TO_PYDANTIC = {
     "text": "str",
@@ -41,25 +41,48 @@ class SchemaGenerator:
 
         return OPENSEARCH_TO_PYDANTIC[opensearch_type]
 
+    def _render_model(
+        self,
+        class_name: str,
+        fields: List[FieldMeta],
+        imports: Set[str],
+        blocks: List[str],
+    ) -> None:
+        """Render class_name, appending sub-models to blocks before it."""
+        lines = [f"class {class_name}(BaseModel):"]
+
+        for field in fields:
+            if field.properties:
+                # same inner class naming as pygen: <Parent><FieldTitle>
+                sub_name = class_name + "".join(
+                    word.title() for word in field.name.split("_")
+                )
+                self._render_model(sub_name, field.properties, imports, blocks)
+
+                if field.type_name == "Nested":
+                    imports.add("from typing import List")
+                    python_type = f"List[{sub_name}]"
+                else:
+                    python_type = sub_name
+            else:
+                python_type = self._resolve_field_type(field.type_name)
+
+                if python_type in PYDANTIC_TYPE_IMPORTS:
+                    imports.add(PYDANTIC_TYPE_IMPORTS[python_type])
+
+            lines.append(f"    {field.name}: {python_type}")
+
+        if len(lines) == 1:
+            lines.append("    pass")
+
+        blocks.append("\n".join(lines))
+
     def generate(self) -> str:
         """Return the generated schema source as Python code."""
         imports: Set[str] = set()
-        field_lines: List[str] = []
+        blocks: List[str] = []
 
-        for field in self.meta.fields:
-            if field.properties:
-                raise ValueError(
-                    "Nested object fields are not supported yet in fastapigen"
-                )
-
-            python_type = self._resolve_field_type(field.type_name)
-
-            if python_type == "datetime":
-                imports.add("from datetime import datetime")
-            elif python_type == "IPvAnyAddress":
-                imports.add("from pydantic import IPvAnyAddress")
-
-            field_lines.append(f"    {field.name}: {python_type}")
+        self._render_model(self.meta.class_name, self.meta.fields, imports, blocks)
 
         lines: List[str] = ["from pydantic import BaseModel"]
 
@@ -67,20 +90,7 @@ class SchemaGenerator:
             lines.append("")
             lines.extend(sorted(imports))
 
-        lines.extend(
-            [
-                "",
-                "",
-                f"class {self.meta.class_name}(BaseModel):",
-            ]
-        )
-
-        if field_lines:
-            lines.extend(field_lines)
-        else:
-            lines.append("    pass")
-
-        lines.append("")
+        lines.extend(["", "", "\n\n\n".join(blocks), ""])
 
         return "\n".join(lines)
 
@@ -214,8 +224,8 @@ def generate_schemas(
     """Generate Pydantic schema modules from templates in a directory.
 
     A template that fails to parse or generate (e.g. an unsupported field
-    type, or a nested object field) is skipped rather than aborting the
-    whole batch, so one bad template doesn't block every other one.
+    type) is skipped rather than aborting the whole batch, so one bad
+    template doesn't block every other one.
 
     Returns:
         A (generated_paths, errors) tuple: the schema files successfully
