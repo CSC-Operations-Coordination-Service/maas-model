@@ -107,3 +107,35 @@ class CdsProduct(generated.CdsProduct):
         self.data_providers.append(data_provider)
 
 ```
+
+## Vault access
+
+`maas_model.vault` reads secrets from an [OpenBao](https://openbao.org) or HashiCorp
+Vault KV version 2 engine, for the MAAS services. It needs the `vault` extra:
+`pip install maas-model[vault]`.
+
+```python
+from maas_model.vault import VaultClient, VaultSettings, read_connection
+
+client = VaultClient(
+    VaultSettings(
+        url="https://bao.internal:8200",
+        role_id="maas-cds",
+        secret_id_file="/run/secrets/maas_vault_secret_id",
+    )
+)
+
+# {"url": ..., "username": ..., "password": ...} at secret/maas/cds/opensearch
+opensearch = read_connection(client, "maas/cds/opensearch", "OpenSearch")
+```
+
+- `VaultClient` logs in with AppRole (the secret id file is read again at each
+  login) or with a token (`token_file`, or `VAULT_TOKEN`). When the vault refuses
+  its token, it logs in again and retries once.
+- `read_secret(path)` returns the latest version of a secret, or `None` when there
+  is none.
+- `read_connection` raises `ValueError` when the secret is missing or has no `url`.
+  Its messages name the secret, never a value.
+
+`maas_model.testing.fakevault.FakeVault` is an in-process stand-in for the vault
+HTTP API, for tests.
