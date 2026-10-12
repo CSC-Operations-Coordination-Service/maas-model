@@ -4,9 +4,9 @@ __all__ = ["ZuluDate"]
 
 import datetime
 
-import dateutil.parser
-import dateutil.tz
 from opensearchpy import Date
+
+from maas_model.date_utils import parse_api_date
 
 
 class ZuluDate(Date):
@@ -34,13 +34,11 @@ class ZuluDate(Date):
     def _serialize(self, data):
         """convert data to ZULU format"""
 
-        # common case
-        if isinstance(data, datetime.datetime):
-            return self._format_zulu(data)
+        # explicit day-first parsing; '' -> None (field left out)
+        if isinstance(data, str):
+            data = parse_api_date(data)
 
-        # less common
-        if isinstance(data, str) and data[-1] != "Z":
-            data = dateutil.parser.parse(data).astimezone(dateutil.tz.UTC)
+        if isinstance(data, datetime.datetime):
             return self._format_zulu(data)
 
         return data

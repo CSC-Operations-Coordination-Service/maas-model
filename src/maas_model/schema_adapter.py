@@ -3,15 +3,20 @@ Convert between fastapigen's Pydantic schemas and pygen's MAASDocument
 persistence models.
 """
 
-from typing import Optional, Type, TypeVar
+from datetime import datetime
+from typing import Annotated, Optional, Type, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
+from maas_model.date_utils import parse_api_date
 from maas_model.document import MAASDocument
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 DocumentT = TypeVar("DocumentT", bound=MAASDocument)
+
+# date type for generated schemas: accepts 'dd/mm/YYYY', ISO, and '' (-> None)
+ApiDate = Annotated[Optional[datetime], BeforeValidator(parse_api_date)]
 
 
 def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> SchemaT:

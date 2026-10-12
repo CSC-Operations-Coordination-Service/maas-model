@@ -16,12 +16,12 @@ OPENSEARCH_TO_PYDANTIC = {
     "float": "float",
     "double": "float",
     "boolean": "bool",
-    "date": "datetime",
+    "date": "ApiDate",
     "ip": "IPvAnyAddress",
 }
 
 PYDANTIC_TYPE_IMPORTS = {
-    "datetime": "from datetime import datetime",
+    "ApiDate": "from maas_model.schema_adapter import ApiDate",
     "IPvAnyAddress": "from pydantic import IPvAnyAddress",
 }
 
