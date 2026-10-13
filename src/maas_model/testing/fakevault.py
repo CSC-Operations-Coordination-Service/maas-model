@@ -1,5 +1,6 @@
 """In-process stand-in for the parts of the OpenBao / Vault HTTP API the MAAS services
-use: AppRole login and KV v2 read / write. Real hvac clients talk to it over HTTP.
+use: AppRole login, token lookup and KV v2 read / write. Real hvac clients talk to it
+over HTTP.
 """
 
 import json

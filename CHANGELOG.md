@@ -28,6 +28,13 @@
   once. A valid token refused by the policy raises `hvac.exceptions.Forbidden`
   without a new login. Other errors, such as a sealed or unreachable vault, are
   raised at once.
+- Telling an expired token from a policy refusal needs read access to
+  `auth/token/lookup-self`, which the default policy grants. Without it, the client
+  takes a policy refusal for an expired token: it logs in again and retries once
+  before raising `Forbidden`.
+- A token taken from `VAULT_TOKEN` or `~/.vault-token` is never replaced: once it
+  expires, reads raise `hvac.exceptions.Forbidden`. For a token renewed outside the
+  service, use `token_file` (`VAULT_TOKEN_FILE` in the services).
 - `VaultClient.read_secret(path)` returns the latest version of a secret, or `None`
   when there is no such secret. The path leaves out the mount point and the `data/`
   segment of the KV version 2 API.
@@ -44,6 +51,7 @@
   of its AppRole logins, deny paths and answer like a sealed vault.
 - Package metadata: the author is now Serco - Space
   (`dev-eof@coordination-service.eu`) instead of telespazio, and the project URL is
-  https://github.com/CSC-Operations-Coordination-Service/maas-model.
+  <https://github.com/CSC-Operations-Coordination-Service/maas-model>.
 
-Earlier versions are only recorded in the git history.
+Version 3.0.0 imported maas-model from the Technical-Dashboard repository
+(`modules/maas-model`); no changelog was kept before 3.1.0.

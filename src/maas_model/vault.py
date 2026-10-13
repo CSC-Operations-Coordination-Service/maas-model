@@ -30,7 +30,7 @@ class VaultSettings:
     secret_id_file: str = ""
 
     # file holding a token for the token auth method. Without it the token is
-    # taken from VAULT_TOKEN
+    # taken from VAULT_TOKEN or ~/.vault-token
     token_file: str = ""
 
 

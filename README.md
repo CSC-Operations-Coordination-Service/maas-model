@@ -130,8 +130,15 @@ opensearch = read_connection(client, "maas/cds/opensearch", "OpenSearch")
 ```
 
 - `VaultClient` logs in with AppRole (the secret id file is read again at each
-  login) or with a token (`token_file`, or `VAULT_TOKEN`). When the vault refuses
-  its token, it logs in again and retries once.
+  login) or with a token (`token_file`, read again at each login, or else
+  `VAULT_TOKEN` or `~/.vault-token`). When the vault refuses a read because the
+  token expired or was revoked, it logs in again and retries once. A valid token
+  refused by the policy raises `hvac.exceptions.Forbidden` without a new login.
+  Telling the two apart needs read access to `auth/token/lookup-self`, which the
+  default policy grants.
+- A token taken from `VAULT_TOKEN` or `~/.vault-token` is never replaced: once it
+  expires, reads raise `Forbidden`. Use `token_file` for a token renewed outside
+  the service.
 - `read_secret(path)` returns the latest version of a secret, or `None` when there
   is none.
 - `read_connection` raises `ValueError` when the secret is missing or has no `url`.
