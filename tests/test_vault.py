@@ -1,5 +1,7 @@
 """Tests for the OpenBao / Vault client shared by the MAAS services"""
 
+from unittest import mock
+
 import hvac
 import pytest
 
@@ -102,6 +104,27 @@ def test_read_secret_gives_up_after_one_new_login(fake_vault, settings):
     assert fake_vault.logins == 2
 
 
+def test_read_secret_raises_at_once_when_the_vault_is_sealed(
+    fake_vault, settings, monkeypatch
+):
+    """a sealed vault is not an expired token: its error comes through without a
+    new login, even when the token expired meanwhile"""
+    fake_vault.put("secret", "maas/cds/opensearch", OPENSEARCH)
+    client = VaultClient(settings)
+    client.read_secret("maas/cds/opensearch")
+
+    fake_vault.expire_tokens()
+    fake_vault.available = False
+    # a login refused by the sealed vault would not count in fake_vault.logins
+    login = mock.Mock(wraps=client.login)
+    monkeypatch.setattr(client, "login", login)
+
+    with pytest.raises(hvac.exceptions.VaultDown):
+        client.read_secret("maas/cds/opensearch")
+
+    login.assert_not_called()
+
+
 def test_read_secret_raises_when_the_secret_id_is_refused(fake_vault, settings):
     fake_vault.secret_id = "revoked"
 
@@ -133,6 +156,28 @@ def test_token_authentication_with_a_token_file(fake_vault, tmp_path):
             url=fake_vault.url, auth_method="token", token_file=str(token_file)
         )
     )
+
+    assert client.read_secret("maas/cds/opensearch") == OPENSEARCH
+
+
+def test_token_authentication_rereads_the_token_file_at_each_login(
+    fake_vault, tmp_path
+):
+    """a token renewed in its file outside the service is used without restart"""
+    fake_vault.put("secret", "maas/cds/opensearch", OPENSEARCH)
+    fake_vault.valid_tokens.add("token-a")
+    token_file = tmp_path / "token"
+    token_file.write_text("token-a\n", encoding="UTF-8")
+    client = VaultClient(
+        VaultSettings(
+            url=fake_vault.url, auth_method="token", token_file=str(token_file)
+        )
+    )
+    client.read_secret("maas/cds/opensearch")
+
+    fake_vault.valid_tokens.discard("token-a")
+    fake_vault.valid_tokens.add("token-b")
+    token_file.write_text("token-b\n", encoding="UTF-8")
 
     assert client.read_secret("maas/cds/opensearch") == OPENSEARCH
 
