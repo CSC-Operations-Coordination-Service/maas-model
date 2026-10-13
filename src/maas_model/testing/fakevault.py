@@ -47,8 +47,11 @@ class FakeVault:
         self._thread.start()
 
     def stop(self):
-        """stop serving requests"""
-        self._server.shutdown()
+        """stop serving requests and close the socket, even when never started"""
+        # shutdown() waits for serve_forever(), so it would hang before start()
+        if self._thread.is_alive():
+            self._server.shutdown()
+
         self._server.server_close()
 
     def put(self, mount: str, path: str, data: dict):
