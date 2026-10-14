@@ -1,0 +1,60 @@
+{
+  "action": "widget:list",
+  "resourceKind": "widget",
+  "filter": {
+    "kind": "KIND_CONDITIONAL",
+    "condition": {
+      "expression": {
+        "operator": "or",
+        "operands": [
+          {
+            "expression": {
+              "operator": "eq",
+              "operands": [
+                {
+                  "value": "S1"
+                },
+                {
+                  "variable": "request.resource.attr.mission"
+                }
+              ]
+            }
+          },
+          {
+            "expression": {
+              "operator": "and",
+              "operands": [
+                {
+                  "expression": {
+                    "operator": "eq",
+                    "operands": [
+                      {
+                        "value": "S2"
+                      },
+                      {
+                        "variable": "request.resource.attr.mission"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "expression": {
+                    "operator": "eq",
+                    "operands": [
+                      {
+                        "value": "E2E"
+                      },
+                      {
+                        "variable": "request.resource.attr.phase"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

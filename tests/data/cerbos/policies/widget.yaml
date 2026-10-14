@@ -1,0 +1,53 @@
+# The policy the query plans and the check response in tests/data/cerbos were
+# captured with, from a real Cerbos PDP (0.56) loading this file next to
+# ocs-portal's derived_roles.yaml (common_roles):
+#
+#   cerbos server --set=storage.driver=disk \
+#       --set=storage.disk.directory=<this directory + derived_roles.yaml>
+#   curl localhost:3592/api/plan/resources -d '{"action": "widget:list", ...}'
+#
+# plans/grants_user.json         user granted [{mission: S1}, {mission: S2, phase: E2E}]
+# plans/assigned_operator.json   operator "bob", list
+# plans/assignee_update.json     user "bob", update
+# plans/unclassified.json        user, widget:unclassified
+# plans/super.json               super_admin, list
+# plans/denied.json              user without grants, list
+# check_response.json            CheckResources for the grants user, see
+#                                test_authz_cerbos.py for the request
+---
+apiVersion: api.cerbos.dev/v1
+resourcePolicy:
+  version: default
+  resource: widget
+  importDerivedRoles:
+    - common_roles
+  rules:
+    - actions: ["widget:list", "widget:read"]
+      effect: EFFECT_ALLOW
+      derivedRoles: ["data_permitted", "super"]
+
+    - actions: ["widget:list", "widget:read"]
+      effect: EFFECT_ALLOW
+      roles: ["operator"]
+      condition:
+        match:
+          expr: P.id in R.attr.assignees
+
+    - actions: ["widget:update"]
+      effect: EFFECT_ALLOW
+      roles: ["user"]
+      condition:
+        match:
+          expr: R.attr.assignee == P.id
+
+    - actions: ["widget:unclassified"]
+      effect: EFFECT_ALLOW
+      derivedRoles: ["portal_user"]
+      condition:
+        match:
+          all:
+            of:
+              - expr: R.attr.mission == null
+              - expr: R.attr.size >= 10
+              - expr: R.attr.name in ["a", "b"]
+              - expr: R.attr.name != "c"

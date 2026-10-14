@@ -10,7 +10,7 @@ this module is genuinely tested, not just its wiring to mocks.
 
 from typing import Any, Dict, List, Optional
 
-from opensearchpy import Keyword
+from opensearchpy import Keyword, Q
 
 from maas_model import document_repository
 from maas_model.document import MAASDocument
@@ -217,3 +217,75 @@ def test_delete_document_bulk_deletes_when_found(monkeypatch):
 	assert len(fake_bulk.calls) == 1
 	_, actions = fake_bulk.calls[0]
 	assert actions[0] == {"_id": "1", "_index": "widget", "_op_type": "delete"}
+
+
+def test_list_documents_pages_through_the_search(monkeypatch):
+	sliced = []
+
+	class _FakeSearch:
+		def __getitem__(self, key):
+			sliced.append(key)
+			return self
+
+		def execute(self):
+			return []
+
+	monkeypatch.setattr(
+		_TestDocument,
+		"search",
+		classmethod(lambda cls, using=None, index=None: _FakeSearch()),
+	)
+
+	list_documents(_TestDocument, offset=20, size=5)
+	list_documents(_TestDocument, offset=30)
+
+	assert sliced == [slice(20, 25), slice(30, 40)]
+
+
+def test_list_documents_filters_before_paging(monkeypatch):
+	"""a query (the caller's Cerbos plan) narrows the search, then pages"""
+	calls = []
+
+	class _FakeSearch:
+		def filter(self, query):
+			calls.append(("filter", query.to_dict()))
+			return self
+
+		def __getitem__(self, key):
+			calls.append(("page", key))
+			return self
+
+		def execute(self):
+			return []
+
+	monkeypatch.setattr(
+		_TestDocument,
+		"search",
+		classmethod(lambda cls, using=None, index=None: _FakeSearch()),
+	)
+
+	list_documents(
+		_TestDocument, offset=0, size=5, query=Q("term", mission="S1")
+	)
+	list_documents(_TestDocument, size=5)
+
+	assert calls == [
+		("filter", {"term": {"mission": "S1"}}),
+		("page", slice(0, 5)),
+		("page", slice(0, 5)),
+	]
+
+
+def test_get_document_takes_a_string_id(monkeypatch):
+	"""documents written by a collector have their own _id, not a number"""
+	calls = []
+
+	def fake_get_by_id(cls, document_id, **kwargs):
+		calls.append(document_id)
+		return None
+
+	monkeypatch.setattr(_TestDocument, "get_by_id", classmethod(fake_get_by_id))
+
+	get_document(_TestDocument, "aB3-xYz")
+
+	assert calls == ["aB3-xYz"]

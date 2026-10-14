@@ -61,6 +61,10 @@ class ModelClassMeta:
 
         self.partition_format = None
 
+        # mappings._meta.free_form: documents hold fields the mapping does not
+        # list, and they must survive a round trip (fastapigen)
+        self.free_form = False
+
         self.fields = []
 
         self.field_names = []
@@ -99,6 +103,7 @@ class ModelClassMeta:
             self.partition_field = meta.get("partition_field")
             self.partition_format = meta.get("partition_format")
             self.class_name = meta.get("class_name", self.class_name)
+            self.free_form = bool(meta.get("free_form", False))
 
         if "properties" in tpl["mappings"]:
             for name, prop in tpl["mappings"]["properties"].items():

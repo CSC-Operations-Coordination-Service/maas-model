@@ -22,7 +22,7 @@ Built entirely on MAASDocument / Document's existing API:
   logic in one place instead of duplicating it here.
 """
 
-from typing import List, Optional, Type, TypeVar
+from typing import Any, List, Optional, Type, TypeVar, Union
 
 from opensearchpy import Integer
 from opensearchpy.helpers import bulk
@@ -74,26 +74,45 @@ def next_id(resource: str, using: Optional[str] = None) -> int:
 
 
 def list_documents(
-    document_cls: Type[DocumentT], using: Optional[str] = None
+    document_cls: Type[DocumentT],
+    using: Optional[str] = None,
+    offset: int = 0,
+    size: Optional[int] = None,
+    query: Optional[Any] = None,
 ) -> List[DocumentT]:
     """
-    List documents of document_cls.
+    List documents of document_cls, one page at a time.
 
-    Minimal first cut: no pagination, so OpenSearch's default page size
-    (10) applies.
+    Without offset or size, OpenSearch's default page size (10) applies.
 
     Args:
         document_cls: the MAASDocument subclass to list.
         using: connection alias to search with.
+        offset: number of documents to skip.
+        size: page size. Defaults to OpenSearch's default (10) when only
+            offset is given.
+        query: an opensearch-py query the documents must match, e.g. the
+            caller's Cerbos query plan (see maas_model.authz). Applied as a
+            filter, before paging.
 
     Returns:
         The matching documents.
     """
-    return list(document_cls.search(using=using).execute())
+    search = document_cls.search(using=using)
+
+    if query is not None:
+        search = search.filter(query)
+
+    if offset or size is not None:
+        search = search[offset : offset + (10 if size is None else size)]
+
+    return list(search.execute())
 
 
 def get_document(
-    document_cls: Type[DocumentT], item_id: int, using: Optional[str] = None
+    document_cls: Type[DocumentT],
+    item_id: Union[int, str],
+    using: Optional[str] = None,
 ) -> Optional[DocumentT]:
     """Fetch one document of document_cls by its resource id.
 
@@ -103,7 +122,7 @@ def get_document(
 
     Args:
         document_cls: the MAASDocument subclass to fetch.
-        item_id: the router-facing integer id.
+        item_id: the document's id, its OpenSearch _id.
         using: accepted for signature symmetry with the rest of this
             module; unused (see note above).
 
@@ -139,7 +158,7 @@ def create_document(document: DocumentT, using: Optional[str] = None) -> Documen
 
 def update_document(
     document_cls: Type[DocumentT],
-    item_id: int,
+    item_id: Union[int, str],
     document: DocumentT,
     using: Optional[str] = None,
 ) -> Optional[DocumentT]:
@@ -148,7 +167,7 @@ def update_document(
 
     Args:
         document_cls: the MAASDocument subclass being updated.
-        item_id: the router-facing integer id of the document to replace.
+        item_id: the id (OpenSearch _id) of the document to replace.
         document: the new content; its meta.id is overwritten.
         using: connection alias to use.
 
@@ -173,7 +192,9 @@ def update_document(
 
 
 def delete_document(
-    document_cls: Type[DocumentT], item_id: int, using: Optional[str] = None
+    document_cls: Type[DocumentT],
+    item_id: Union[int, str],
+    using: Optional[str] = None,
 ) -> bool:
     """
     Delete a document by its resource id.
@@ -183,7 +204,7 @@ def delete_document(
 
     Args:
         document_cls: the MAASDocument subclass being deleted from.
-        item_id: the router-facing integer id of the document to delete.
+        item_id: the id (OpenSearch _id) of the document to delete.
         using: connection alias to use.
 
     Returns:

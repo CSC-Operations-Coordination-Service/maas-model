@@ -1,0 +1,69 @@
+{
+  "action": "widget:unclassified",
+  "resourceKind": "widget",
+  "filter": {
+    "kind": "KIND_CONDITIONAL",
+    "condition": {
+      "expression": {
+        "operator": "and",
+        "operands": [
+          {
+            "expression": {
+              "operator": "eq",
+              "operands": [
+                {
+                  "variable": "request.resource.attr.mission"
+                },
+                {
+                  "value": null
+                }
+              ]
+            }
+          },
+          {
+            "expression": {
+              "operator": "ge",
+              "operands": [
+                {
+                  "variable": "request.resource.attr.size"
+                },
+                {
+                  "value": 10
+                }
+              ]
+            }
+          },
+          {
+            "expression": {
+              "operator": "in",
+              "operands": [
+                {
+                  "variable": "request.resource.attr.name"
+                },
+                {
+                  "value": [
+                    "a",
+                    "b"
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "expression": {
+              "operator": "ne",
+              "operands": [
+                {
+                  "variable": "request.resource.attr.name"
+                },
+                {
+                  "value": "c"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  }
+}

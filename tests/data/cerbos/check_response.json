@@ -1,0 +1,33 @@
+{
+  "requestId": "c1",
+  "results": [
+    {
+      "resource": {
+        "id": "1",
+        "kind": "widget"
+      },
+      "actions": {
+        "widget:read": "EFFECT_ALLOW",
+        "widget:update": "EFFECT_ALLOW"
+      }
+    },
+    {
+      "resource": {
+        "id": "2",
+        "kind": "widget"
+      },
+      "actions": {
+        "widget:read": "EFFECT_DENY"
+      }
+    },
+    {
+      "resource": {
+        "id": "3",
+        "kind": "widget"
+      },
+      "actions": {
+        "widget:read": "EFFECT_DENY"
+      }
+    }
+  ]
+}

@@ -28,6 +28,20 @@ def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> Sch
 
     data = {name: getattr(document, name) for name in field_names}
 
+    # a free-form schema (extra="allow") also gets the fields no mapping lists
+    if schema_cls.model_config.get("extra") == "allow":
+        data.update(
+            (name, value)
+            for name, value in document.to_dict().items()
+            if name not in document._INITIAL_FIELDS
+        )
+
+    # fastapigen's read-only schemas carry the OpenSearch _id, which no index
+    # field holds, so a client can get what it listed. An index field of that
+    # name wins.
+    if "document_id" in schema_cls.model_fields and "document_id" not in data:
+        data["document_id"] = getattr(document.meta, "id", None)
+
     return schema_cls(**data)
 
 
@@ -54,6 +68,9 @@ def schema_to_document(
         for name, value in schema.model_dump().items()
         if name in field_names
     }
+
+    # and gives them back: the fields a free-form schema holds beyond its own
+    data.update(schema.model_extra or {})
 
     meta = {"id": document_id} if document_id is not None else {}
 

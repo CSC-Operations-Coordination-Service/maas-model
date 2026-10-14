@@ -6,7 +6,7 @@ import pytest
 pytest.importorskip("pydantic")
 
 from opensearchpy import Keyword  # noqa: E402
-from pydantic import BaseModel  # noqa: E402
+from pydantic import BaseModel, ConfigDict  # noqa: E402
 
 from maas_model.document import MAASDocument  # noqa: E402
 from maas_model.schema_adapter import (  # noqa: E402
@@ -93,3 +93,64 @@ def test_schema_to_document_without_id_leaves_meta_id_unset():
     document = schema_to_document(schema, _TestDocument)
 
     assert "id" not in document.meta
+
+class _ReadOnlySchema(BaseModel):
+    """fastapigen's read-only shape: optional fields plus the document id"""
+
+    document_id: Optional[str] = None
+    name: Optional[str] = None
+
+
+def test_document_to_schema_fills_the_document_id_from_meta():
+    document = _TestDocument(meta={"id": "abc"}, name="example")
+
+    schema = document_to_schema(document, _ReadOnlySchema)
+
+    assert schema.document_id == "abc"
+    assert schema.name == "example"
+
+
+def test_document_to_schema_leaves_schemas_without_document_id_alone():
+    document = _TestDocument(
+        meta={"id": "abc"},
+        id="1",
+        name="example",
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+    )
+
+    assert "document_id" not in document_to_schema(document, _TestSchema).model_dump()
+
+
+class _FreeFormSchema(BaseModel):
+    """fastapigen's shape for a free-form index: unmapped fields allowed"""
+
+    model_config = ConfigDict(extra="allow")
+
+    document_id: Optional[str] = None
+    name: Optional[str] = None
+
+
+def test_a_free_form_schema_gets_the_unmapped_fields_of_the_document():
+    document = _TestDocument(
+        meta={"id": "abc"},
+        name="example",
+        internal_note="mapped, not in the schema",
+        **{"class": "C", "attr_map": {"a": {"python": "x"}}},
+    )
+
+    schema = document_to_schema(document, _FreeFormSchema)
+
+    assert schema.model_dump() == {
+        "document_id": "abc",
+        "name": "example",
+        "class": "C",
+        "attr_map": {"a": {"python": "x"}},
+    }
+
+
+def test_a_free_form_schema_gives_the_document_its_unmapped_fields():
+    schema = _FreeFormSchema(name="example", **{"class": "C", "attr_map": {"a": 1}})
+
+    document = schema_to_document(schema, _TestDocument, document_id="doc-1")
+
+    assert document.to_dict() == {"name": "example", "class": "C", "attr_map": {"a": 1}}

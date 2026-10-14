@@ -1,0 +1,7 @@
+{
+  "action": "widget:list",
+  "resourceKind": "widget",
+  "filter": {
+    "kind": "KIND_ALWAYS_DENIED"
+  }
+}

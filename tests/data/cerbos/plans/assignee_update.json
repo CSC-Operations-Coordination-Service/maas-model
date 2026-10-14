@@ -1,0 +1,20 @@
+{
+  "action": "widget:update",
+  "resourceKind": "widget",
+  "filter": {
+    "kind": "KIND_CONDITIONAL",
+    "condition": {
+      "expression": {
+        "operator": "eq",
+        "operands": [
+          {
+            "variable": "request.resource.attr.assignee"
+          },
+          {
+            "value": "bob"
+          }
+        ]
+      }
+    }
+  }
+}
