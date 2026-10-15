@@ -74,7 +74,7 @@ def next_id(resource: str, using: Optional[str] = None) -> int:
 
 
 def list_documents(
-    document_cls: Type[DocumentT], using: Optional[str] = None
+    document_cls: Type[DocumentT], using: Optional[str] = None, offset: int = 0, limit: int = 100,
 ) -> List[DocumentT]:
     """
     List documents of document_cls.
@@ -89,7 +89,7 @@ def list_documents(
     Returns:
         The matching documents.
     """
-    return list(document_cls.search(using=using).execute())
+    return list(document_cls.search(using=using)[offset:offset + limit].execute())
 
 
 def get_document(

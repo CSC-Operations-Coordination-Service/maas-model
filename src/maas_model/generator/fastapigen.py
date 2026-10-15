@@ -106,7 +106,7 @@ sibling MAASDocument via maas_model.schema_adapter.
 
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Response
+from fastapi import APIRouter, HTTPException, Query, Response
 
 from maas_model.document_repository import (
     create_document,
@@ -124,9 +124,12 @@ router = APIRouter(prefix="/__RESOURCE__", tags=["__RESOURCE__"])
 
 
 @router.get("/", response_model=List[__CLASS_NAME__])
-def list___MODULE_NAME__() -> List[__CLASS_NAME__]:
+def list___MODULE_NAME__(
+    offset: int = Query(0, ge=0)
+    limit: int = Query(100, ge=1, le=1000),
+) -> List[__CLASS_NAME__]:
     """List all __CLASS_NAME__ resources."""
-    documents = list_documents(__CLASS_NAME__Document)
+    documents = list_documents(__CLASS_NAME__Document, offset=offset, limit=limit)
     return [document_to_schema(document, __CLASS_NAME__) for document in documents]
 
 
