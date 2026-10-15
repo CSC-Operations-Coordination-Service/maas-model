@@ -89,7 +89,7 @@ def list_documents(
     Returns:
         The matching documents.
     """
-    return list(document_cls.search(using=using)[offset:offset + limit].execute())
+    return list(document_cls.search(using=using).params(ignore_unavailable=True)[offset:offset + limit].execute())
 
 
 def get_document(
