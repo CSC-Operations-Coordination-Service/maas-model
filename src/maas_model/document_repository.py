@@ -130,6 +130,8 @@ def create_document(document: DocumentT, using: Optional[str] = None) -> Documen
     resource = document_cls.Index.name
 
     document.meta.id = str(next_id(resource, using=using))
+    if "id" in document._INITIAL_FIELDS:
+        document.id = document.meta.id
 
     connection = document_cls._get_connection(using)
     bulk(connection, [document.to_bulk_action(op_type="create")])
@@ -162,6 +164,8 @@ def update_document(
         return None
 
     document.meta.id = item_id
+    if "id" in document._INITIAL_FIELDS:
+        document.id = item_id
     document.meta.index = existing.meta.index
     document.meta.seq_no = existing.meta.seq_no
     document.meta.primary_term = existing.meta.primary_term
