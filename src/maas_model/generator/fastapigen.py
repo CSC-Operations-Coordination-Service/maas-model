@@ -125,7 +125,7 @@ router = APIRouter(prefix="/__RESOURCE__", tags=["__RESOURCE__"])
 
 @router.get("/", response_model=List[__CLASS_NAME__])
 def list___MODULE_NAME__(
-    offset: int = Query(0, ge=0)
+    offset: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
 ) -> List[__CLASS_NAME__]:
     """List all __CLASS_NAME__ resources."""
