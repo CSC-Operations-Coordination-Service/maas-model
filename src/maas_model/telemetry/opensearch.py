@@ -13,8 +13,7 @@ import re
 import time
 from typing import Any
 
-from maas_model.telemetry import semconv
-from maas_model.telemetry._instruments import _counter, _histogram
+from maas_model.telemetry import metrics
 from maas_model.telemetry._noop import NOOP_SPAN
 from maas_model.telemetry._state import STATE
 from maas_model.telemetry.activity import current_activity
@@ -23,23 +22,6 @@ from maas_model.telemetry.tracing import current_span_context, span
 LOGGER = logging.getLogger("Telemetry")
 
 _MARK = "_maas_telemetry_wrapped"
-
-_DURATION = _histogram(
-    semconv.OPENSEARCH_REQUEST_DURATION,
-    unit="s",
-    description="OpenSearch request duration",
-    boundaries=semconv.OPENSEARCH_BUCKETS,
-)
-_TIME = _counter(
-    semconv.OPENSEARCH_TIME,
-    unit="s",
-    description="time spent in OpenSearch requests",
-)
-_REQUESTS = _counter(
-    semconv.OPENSEARCH_REQUESTS,
-    unit="{request}",
-    description="OpenSearch requests",
-)
 
 _DATE_SUFFIX = re.compile(r"-\d{4}([.-]\d{2}){0,2}$")
 
@@ -156,7 +138,7 @@ def _record(operation, index, started, error, parent):
         "operation": operation,
         "index": index,
     }
-    _DURATION.record(
+    metrics.OPENSEARCH_REQUEST_DURATION.record(
         elapsed,
         {
             "operation": operation,
@@ -165,8 +147,8 @@ def _record(operation, index, started, error, parent):
         },
         context=parent,
     )
-    _TIME.add(elapsed, shared, context=parent)
-    _REQUESTS.add(1, shared, context=parent)
+    metrics.OPENSEARCH_TIME.add(elapsed, shared, context=parent)
+    metrics.OPENSEARCH_REQUESTS.add(1, shared, context=parent)
 
 
 def _wrap(original):

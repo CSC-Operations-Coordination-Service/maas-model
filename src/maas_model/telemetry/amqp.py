@@ -11,37 +11,12 @@ import logging
 import time
 from typing import Any, Iterable, Mapping, Optional
 
-from maas_model.telemetry import semconv
-from maas_model.telemetry._instruments import _counter, _histogram
+from maas_model.telemetry import metrics, semconv
 from maas_model.telemetry._noop import NOOP_SPAN
 from maas_model.telemetry._state import STATE
 from maas_model.telemetry.tracing import span
 
 LOGGER = logging.getLogger("Telemetry")
-
-_PUBLISHED = _counter(
-    semconv.MESSAGES_PUBLISHED, unit="{message}", description="messages published"
-)
-_RETURNED = _counter(
-    semconv.MESSAGES_RETURNED,
-    unit="{message}",
-    description="messages returned as unroutable",
-)
-_CONSUMED = _counter(
-    semconv.MESSAGES_CONSUMED, unit="{message}", description="messages consumed"
-)
-_DOCUMENTS = _histogram(
-    semconv.MESSAGE_DOCUMENTS,
-    unit="{document}",
-    description="documents per message",
-    boundaries=semconv.DOCUMENT_BUCKETS,
-)
-_PROCESSING = _histogram(
-    semconv.MESSAGE_PROCESSING_DURATION,
-    unit="s",
-    description="message processing duration",
-    boundaries=semconv.DURATION_BUCKETS,
-)
 
 
 def inject(headers: Optional[dict] = None) -> dict:
@@ -148,14 +123,16 @@ def publish_span(
             raise
         finally:
             labels = {"exchange": exchange, "routing_key": routing_key}
-            _PUBLISHED.add(1, dict(labels, outcome=outcome))
+            metrics.MESSAGES_PUBLISHED.add(1, dict(labels, outcome=outcome))
             if document_count is not None:
-                _DOCUMENTS.record(document_count, dict(labels, direction="out"))
+                metrics.MESSAGE_DOCUMENTS.record(
+                    document_count, dict(labels, direction="out")
+                )
 
 
 def returned(exchange: str, routing_key: str, reason: str) -> None:
     """count a message returned by the broker as unroutable"""
-    _RETURNED.add(
+    metrics.MESSAGES_RETURNED.add(
         1, {"exchange": exchange, "routing_key": routing_key, "reason": reason}
     )
 
@@ -272,7 +249,7 @@ def consume_span(message, *, queue: str, body: Any = None):
                 consumed.set_attribute(semconv.ATTR_REASON, scope._reason)
             except Exception:  # pylint: disable=broad-except
                 pass
-            _CONSUMED.add(
+            metrics.MESSAGES_CONSUMED.add(
                 1,
                 {
                     "exchange": exchange,
@@ -283,12 +260,12 @@ def consume_span(message, *, queue: str, body: Any = None):
                     "redelivered": redelivered,
                 },
             )
-            _PROCESSING.record(
+            metrics.MESSAGE_PROCESSING_DURATION.record(
                 time.perf_counter() - start,
                 {"queue": queue, "outcome": scope._outcome},
             )
             if isinstance(documents, (list, tuple)):
-                _DOCUMENTS.record(
+                metrics.MESSAGE_DOCUMENTS.record(
                     len(documents),
                     {
                         "direction": "in",

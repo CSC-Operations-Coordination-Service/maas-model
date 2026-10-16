@@ -14,8 +14,8 @@ from typing import Any, Callable, Mapping, Optional
 
 import dateutil.parser
 
-from maas_model.telemetry import semconv
-from maas_model.telemetry._instruments import _counter, counter, histogram
+from maas_model.telemetry import metrics, semconv
+from maas_model.telemetry._instruments import counter, histogram
 from maas_model.telemetry._state import STATE
 
 LOGGER = logging.getLogger("Telemetry")
@@ -359,7 +359,7 @@ def record_latency(
     if attributes:
         _check_labels(attributes)
     hist = histogram(name, boundaries=boundaries)
-    negative = _counter(semconv.LATENCY_NEGATIVE)
+    negative = metrics.LATENCY_NEGATIVE
     get_start = _accessor(start)
     get_end = _accessor(end)
     getters = {label: _accessor(spec) for label, spec in (attributes or {}).items()}
