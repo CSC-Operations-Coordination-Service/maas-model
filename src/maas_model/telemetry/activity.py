@@ -48,10 +48,11 @@ _DISABLED = _DisabledActivity()
 class _ActivityScope:
     def __init__(self, entry: Activity):
         self.entry = entry
-        self.token = None
+        self.previous = None
 
     def __enter__(self):
-        self.token = _current.set(self.entry)
+        self.previous = _current.get()
+        _current.set(self.entry)
         with _lock:
             _stack.append(self.entry)
         return self.entry
@@ -63,10 +64,13 @@ class _ActivityScope:
                 if _stack[index] is self.entry:
                     del _stack[index]
                     break
-        try:
-            _current.reset(self.token)
-        except ValueError:  # exited from another context
-            _current.set(None)
+            previous_alive = self.previous is not None and any(
+                item is self.previous for item in _stack
+            )
+        # only touch the contextvar if it still is this scope's entry, and
+        # never bring back an activity that has already exited
+        if _current.get() is self.entry:
+            _current.set(self.previous if previous_alive else None)
         return False
 
 

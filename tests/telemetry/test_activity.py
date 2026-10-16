@@ -40,3 +40,28 @@ def test_activity_disabled_returns_none():
     with telemetry.activity("engine", "X") as act:
         assert act is None
         assert telemetry.current_activity() is None
+
+
+def test_out_of_order_exit_never_restores_exited_activity(telemetry_capture):
+    import contextvars
+
+    def out_of_order():
+        a, b = telemetry.activity("t", "A"), telemetry.activity("t", "B")
+        a.__enter__()
+        b.__enter__()
+        a.__exit__(None, None, None)
+        assert telemetry.current_activity().node == "B"
+        b.__exit__(None, None, None)
+        assert telemetry.current_activity() is None
+
+    def in_order():
+        a, b = telemetry.activity("t", "A"), telemetry.activity("t", "B")
+        a.__enter__()
+        b.__enter__()
+        b.__exit__(None, None, None)
+        assert telemetry.current_activity().node == "A"
+        a.__exit__(None, None, None)
+        assert telemetry.current_activity() is None
+
+    contextvars.copy_context().run(out_of_order)
+    contextvars.copy_context().run(in_order)
