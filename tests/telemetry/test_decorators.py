@@ -343,3 +343,18 @@ def test_async_decorators_disabled_are_transparent():
         assert _collect(gen()) == [1]
     assert len(_collect(latency_gen())) == 1
     assert asyncio.run(latency_arg(3)) == 3
+
+
+def test_record_latency_on_return_refuses_generators():
+    decorate = telemetry.record_latency("maas.business.x", start="a", end="b")
+
+    def gen():
+        yield {}
+
+    async def agen():
+        yield {}
+
+    with pytest.raises(ValueError):
+        decorate(gen)
+    with pytest.raises(ValueError):
+        decorate(agen)

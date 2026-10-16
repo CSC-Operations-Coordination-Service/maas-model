@@ -419,6 +419,12 @@ def record_latency(
 
             return gen_wrapper
 
+        if arg_name is None and _is_generator(func):
+            raise ValueError(
+                f"on='return' records nothing for a generator function, "
+                f"use on='yield': {func.__qualname__}"
+            )
+
         if arg_name is not None:
             signature = inspect.signature(func)
             if arg_name not in signature.parameters:
