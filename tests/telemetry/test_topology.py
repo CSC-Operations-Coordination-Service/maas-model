@@ -165,6 +165,32 @@ def _observed(i):
     return dict(ROUTE, routing_key=f"rk.{i}", source="observed")
 
 
+def test_clear_observed_rearms_cap(monkeypatch):
+    monkeypatch.setattr(semconv, "MAX_OBSERVED_ROUTES", 2)
+    for i in range(4):
+        topology.declare_route(**_observed(i))
+    assert len(topology.routes()) == 2
+    topology.clear("observed")
+    for i in range(10, 14):
+        topology.declare_route(**_observed(i))
+    assert len(topology.routes()) == 2
+    topology.clear()
+    topology.declare_route(**_observed(20))
+    topology.declare_route(**_observed(21))
+    assert len(topology.routes()) == 2
+
+
+def test_clear_config_keeps_observed_count(monkeypatch):
+    monkeypatch.setattr(semconv, "MAX_OBSERVED_ROUTES", 2)
+    topology.declare_route(**dict(ROUTE, routing_key="cfg"))
+    for i in range(3):
+        topology.declare_route(**_observed(i))
+    topology.clear("config")
+    topology.declare_route(**_observed(9))
+    observed = [r for r in topology.routes() if r.source == "observed"]
+    assert len(observed) == 2
+
+
 def test_observed_routes_capped(caplog, monkeypatch):
     monkeypatch.setattr(semconv, "MAX_OBSERVED_ROUTES", 3)
     with caplog.at_level("WARNING", logger="Telemetry"):

@@ -35,7 +35,12 @@ def test_disabled_overhead_under_1us():
         with telemetry.span("x"):
             pass
 
+    def baggage_enter_exit():
+        with telemetry.baggage(a="b"):
+            pass
+
     measured = {
+        "baggage enter/exit": per_call(baggage_enter_exit),
         "counter.add": per_call(lambda: ctr.add(1, {"a": "b"})),
         "histogram.record": per_call(lambda: hist.record(1.0, {"a": "b"})),
         "span enter/exit": per_call(enter_exit),

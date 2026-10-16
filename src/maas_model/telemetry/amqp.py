@@ -18,6 +18,8 @@ from maas_model.telemetry.tracing import span
 
 LOGGER = logging.getLogger("Telemetry")
 
+_TRACE_KEYS = frozenset({"traceparent", "tracestate", "baggage"})
+
 
 def inject(headers: Optional[dict] = None) -> dict:
     """
@@ -120,7 +122,12 @@ def publish_span(
         f"publish {exchange}", kind="producer", attributes=attrs, links=links
     ):
         try:
-            yield inject(dict(headers or {}))
+            carried = {
+                key: value
+                for key, value in (headers or {}).items()
+                if key not in _TRACE_KEYS
+            }
+            yield inject(carried)
         except BaseException:
             outcome = "error"
             raise
@@ -214,6 +221,30 @@ def _body_attributes(body) -> dict:
 
 
 @contextlib.contextmanager
+def _attached(context):
+    """
+    make an extracted context current for the span, so that its baggage is
+    carried on by what the consumer publishes; nothing to do for None
+    """
+    token = None
+    if context is not None:
+        try:
+            from opentelemetry import context as otel_context
+
+            token = otel_context.attach(context)
+        except Exception:  # pylint: disable=broad-except
+            LOGGER.debug("context attach failed", exc_info=True)
+    try:
+        yield
+    finally:
+        if token is not None:
+            try:
+                otel_context.detach(token)
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.debug("context detach failed", exc_info=True)
+
+
+@contextlib.contextmanager
 def consume_span(message, *, queue: str, body: Any = None):
     """
     CONSUMER span around the processing of a received message
@@ -231,6 +262,7 @@ def consume_span(message, *, queue: str, body: Any = None):
         from opentelemetry.context import Context
 
         parent = extract(getattr(message, "headers", None))
+        incoming = parent
         if parent is None:
             parent = Context()
         attrs = {
@@ -250,7 +282,7 @@ def consume_span(message, *, queue: str, body: Any = None):
         return
 
     start = time.perf_counter()
-    with span(
+    with _attached(incoming), span(
         f"process {queue}", kind="consumer", attributes=attrs, parent=parent
     ) as consumed:
         scope = ConsumeScope(consumed)

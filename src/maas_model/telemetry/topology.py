@@ -41,6 +41,7 @@ class Route:
 _LOCK = threading.Lock()
 _ROUTES = set()
 _OBSERVED_WARNED = False
+_OBSERVED_COUNT = 0
 # (node_type, node) -> (impl, summary)
 _NODES: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
@@ -68,7 +69,7 @@ def declare_route(
     semconv.MAX_OBSERVED_ROUTES observed routes exist a new one is ignored, with
     one warning per process; config routes are never capped.
     """
-    global _OBSERVED_WARNED
+    global _OBSERVED_WARNED, _OBSERVED_COUNT
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be in {sorted(DIRECTIONS)}: {direction!r}")
     if node_type not in NODE_TYPES:
@@ -86,16 +87,15 @@ def declare_route(
         source,
     )
     with _LOCK:
-        if (
-            source == "observed"
-            and route not in _ROUTES
-            and sum(1 for r in _ROUTES if r.source == "observed")
-            >= semconv.MAX_OBSERVED_ROUTES
-        ):
+        if route in _ROUTES:
+            return
+        if source == "observed" and _OBSERVED_COUNT >= semconv.MAX_OBSERVED_ROUTES:
             warn = not _OBSERVED_WARNED
             _OBSERVED_WARNED = True
         else:
             _ROUTES.add(route)
+            if source == "observed":
+                _OBSERVED_COUNT += 1
             return
     if warn:
         LOGGER.warning(
@@ -123,19 +123,23 @@ def declare_node(
 
 def clear(source: Optional[str] = None) -> None:
     """forget the routes, of one source or of all; nodes are kept"""
+    global _OBSERVED_COUNT
     with _LOCK:
         if source is None:
             _ROUTES.clear()
         else:
             for route in [r for r in _ROUTES if r.source == source]:
                 _ROUTES.discard(route)
+        if source is None or source == "observed":
+            _OBSERVED_COUNT = 0
 
 
 def _reset_for_tests() -> None:
     """forget every declared route and node"""
-    global _OBSERVED_WARNED
+    global _OBSERVED_WARNED, _OBSERVED_COUNT
     with _LOCK:
         _OBSERVED_WARNED = False
+        _OBSERVED_COUNT = 0
         _ROUTES.clear()
         _NODES.clear()
 

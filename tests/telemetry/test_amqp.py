@@ -176,6 +176,15 @@ def test_publish_span_trace_keys_win(telemetry_capture):
     assert given == {"traceparent": "stale"}
 
 
+def test_publish_span_drops_stale_trace_keys(telemetry_capture):
+    given = {"traceparent": "x", "tracestate": "y", "baggage": "z=1", "k": "v"}
+    with telemetry.amqp.publish_span("e", "rk", headers=given) as headers:
+        assert headers["traceparent"] != "x"
+        assert "tracestate" not in headers
+        assert "baggage" not in headers
+        assert headers["k"] == "v"
+
+
 def test_publish_span_disabled_returns_copy_of_headers():
     _state.reset()
     given = {"x": "1"}

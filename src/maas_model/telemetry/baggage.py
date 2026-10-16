@@ -35,7 +35,7 @@ class _Baggage:
 
     def __init__(self, items: dict):
         self._items = items
-        self._token = None
+        self._tokens = []
 
     def __enter__(self):
         try:
@@ -44,14 +44,14 @@ class _Baggage:
             ctx = context.get_current()
             for key, value in self._items.items():
                 ctx = baggage.set_baggage(key, value, context=ctx)
-            self._token = context.attach(ctx)
+            self._tokens.append(context.attach(ctx))
         except Exception:  # pylint: disable=broad-except
             LOGGER.debug("baggage attach failed", exc_info=True)
         return self
 
     def __exit__(self, exc_type, exc, traceback):
-        token, self._token = self._token, None
-        if token is not None:
+        if self._tokens:
+            token = self._tokens.pop()
             try:
                 from opentelemetry import context
 
