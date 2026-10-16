@@ -97,6 +97,7 @@ class MAASQueryMessage(MAASBaseMessage):
     document_class the name of the class (ie index) of the document
     query_string the lucene query that will be execute to select entities
     output_routing_key where the report must be sendend
+    output_document_class the class the reports name, when it is not the scanned one (e.g. CdsPublication scanned, PripProduct re-emitted)
     chunk_size number of ids in reports
     """
 
@@ -105,6 +106,8 @@ class MAASQueryMessage(MAASBaseMessage):
     query_string: str = "*"
 
     output_routing_key: str = ""
+
+    output_document_class: str = ""
 
     chunk_size: int = 0
 
