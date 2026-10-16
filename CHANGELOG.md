@@ -23,9 +23,15 @@
   topology in `telemetry.topology`, and the timing of OpenSearch requests. Label names
   that look like identifiers are refused, and an instrument keeps at most 500 attribute
   sets. See `docs/telemetry.md`.
+- `maas_model.telemetry.metrics` holds one ready instrument per counter and histogram
+  of the observability Metric spec (`MESSAGES_PUBLISHED`, `ENGINE_RUN_DURATION`,
+  `COLLECTOR_FILES`, `OPENSEARCH_TIME`, ...), named after the `semconv` constants, with
+  their units and buckets fixed in one place. Engines and collectors record with them.
 - `maas_model.telemetry.testing` and its `telemetry_capture` pytest fixture capture the
-  spans and metrics of a test in memory. `tox -e no-otel` checks that the module works
-  without OpenTelemetry installed.
+  spans and metrics of a test in memory. A capture starts and ends with an empty
+  topology registry and no activity. `tox -e no-otel` checks that the module works
+  without OpenTelemetry installed, and `tox -e perf` checks the 1 µs per call budget of
+  disabled telemetry.
 
 ## Version 3.1.0
 

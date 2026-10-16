@@ -55,19 +55,55 @@ The OpenSearch client is instrumented when telemetry is enabled, pass
 
 ## 2. What you get for free
 
-Once `configure()` has enabled telemetry, the services record, with no code of their own:
+Once `configure()` has enabled telemetry, the library records:
 
 - AMQP publish and consume spans and metrics, through `telemetry.amqp.publish_span()`,
   `telemetry.amqp.consume_span()` and `telemetry.amqp.returned()`. The trace context
   travels in the message headers.
-- OpenSearch request duration, time and count, per operation, index and node.
+- OpenSearch request duration, time and count, per operation, index and node, with no
+  code of the service's own.
 - The declared topology and the build, as info metrics: `telemetry.topology.declare_route()`
   and `declare_node()`.
-- Engine and collector metrics, with names kept in `telemetry.semconv`.
+
+The engine and collector metrics (`maas.engine.*`, `maas.collector.*`) arrive once
+maas-engine and maas-collector integrate the library (Phases 2 and 3): they record them
+with the instruments of `telemetry.metrics`.
 
 The list of metrics and their labels is the "Metric spec" table of the design spec,
 `maas-development` repository, `docs/superpowers/specs/2026-10-16-maas-observability-design.md`,
 section "Metric spec".
+
+### The spec metrics: `telemetry.metrics`
+
+`telemetry.metrics` holds one ready instrument per counter and histogram of the Metric
+spec table, named after its `telemetry.semconv` constant, with its unit, buckets and
+description fixed. Record with them, never define the same metric again:
+
+```python
+from maas_model.telemetry import metrics
+
+metrics.ENGINE_DOCUMENTS.add(12, {"node": "COMPUTE_X", "result": "created"})
+metrics.ENGINE_RUN_DURATION.record(
+    3.2, {"node": "COMPUTE_X", "routing_key": "rk", "outcome": "ok"}
+)
+```
+
+| Instrument | Kind | Unit | Buckets |
+|---|---|---|---|
+| `MESSAGES_PUBLISHED`, `MESSAGES_RETURNED`, `MESSAGES_CONSUMED` | counter | `{message}` | |
+| `MESSAGE_DOCUMENTS` | histogram | `{document}` | `DOCUMENT_BUCKETS` |
+| `MESSAGE_PROCESSING_DURATION` | histogram | `s` | `DURATION_BUCKETS` |
+| `ENGINE_RUN_DURATION` | histogram | `s` | `DURATION_BUCKETS` |
+| `ENGINE_DOCUMENTS`, `ENGINE_INPUT_DOCUMENTS`, `ENGINE_INPUT_MISSING`, `ENGINE_REPORTS_DOCUMENTS` | counter | `{document}` | |
+| `COLLECTOR_FILES` | counter | `{file}` | |
+| `COLLECTOR_FILE_DURATION`, `COLLECTOR_LOOP_DURATION` | histogram | `s` | `DURATION_BUCKETS` |
+| `COLLECTOR_DOCUMENTS`, `COLLECTOR_DOCUMENTS_ROUTED` | counter | `{document}` | |
+| `OPENSEARCH_REQUEST_DURATION` | histogram | `s` | `OPENSEARCH_BUCKETS` |
+| `OPENSEARCH_TIME` | counter | `s` | |
+| `OPENSEARCH_REQUESTS` | counter | `{request}` | |
+| `LATENCY_NEGATIVE` | counter | none | |
+
+The labels of each metric are those of the Metric spec table.
 
 Every recording carries the `component` and `deployment` labels.
 
@@ -81,7 +117,8 @@ with telemetry.span("load documents", attributes={"maas.document.count": 12}) as
 def compute(...): ...
 ```
 
-`span()` yields a no-op span while telemetry is disabled. `current_span_context()` and
+`@telemetry.traced` also works bare, without parentheses. `span()` yields a no-op span
+while telemetry is disabled. `current_span_context()` and
 `set_span_attributes()` act on the current span. `activity(node_type, node)` marks the node
 a thread is working on, `current_activity()` reads it from worker threads, which is how the
 OpenSearch time is attributed to a node.
@@ -107,7 +144,9 @@ DATATAKES = telemetry.counter(
 
 @telemetry.timed("maas.business.cds.datatake.compute.duration")
 def compute_datatake(datatake):
-    ...
+    with telemetry.span("compute") as span:
+        span.set_attribute("maas.pipeline", datatake.pipeline)
+        ...
     DATATAKES.add(1, {"mission": datatake.mission})
 ```
 
@@ -135,7 +174,8 @@ def ingest(files):
 `start` and `end` are a dotted field path (attribute or dict key), `"@now"`, or a callable
 returning a datetime, an ISO 8601 string or `None`. `on` is `"return"` (the result, each
 element of a list or tuple), `"yield"` (each item of a generator) or `"arg:<param>"` (a
-bound argument). Naive datetimes are taken as UTC. A document with a missing or unparseable
+bound argument). `on="return"` on a generator function raises a `ValueError`: use
+`on="yield"`. Naive datetimes are taken as UTC. A document with a missing or unparseable
 date is skipped, and a negative delta is counted in `maas.latency.negative` instead of
 being recorded.
 
@@ -197,10 +237,13 @@ the end of the test. Import the fixture in the `conftest.py` of your tests, whic
 `testing` extra (it installs OpenTelemetry):
 
 ```python
+from types import SimpleNamespace
+
 from maas_model.telemetry.testing import telemetry_capture  # noqa: F401
 
 
 def test_datatake(telemetry_capture):
+    datatake = SimpleNamespace(mission="S1", pipeline="daily")
     compute_datatake(datatake)
 
     point = telemetry_capture.point(
@@ -215,5 +258,12 @@ def test_datatake(telemetry_capture):
 `sum` for a histogram. `testing.capture(component)` does the same without pytest. The metric
 names are the OpenTelemetry ones, with dots.
 
+The capture starts and ends with an empty topology registry and no activity: routes and
+nodes declared before it, at import time for example, are forgotten, so declare them
+inside the test that checks them.
+
 A code base that must also work without OpenTelemetry can run its no-op tests with
 `tox -e no-otel`, which installs no OpenTelemetry at all.
+
+In maas-model, `tox -e perf` checks the 1 µs per call budget of disabled telemetry. The
+check needs to run without coverage, so the default test run skips it.
