@@ -92,8 +92,11 @@ def traced(
     decorator wrapping a sync, async or generator function in a span
 
     The span is named after the function qualname by default. For a generator
-    it covers the first next() up to exhaustion or close.
+    it covers the first next() up to exhaustion or close. Usable bare, as
+    @traced, or called, as @traced(...).
     """
+    if callable(name):  # bare @traced: name is the decorated function
+        return traced()(name)
     if kind not in _KINDS:
         raise ValueError(f"span kind must be one of {_KINDS}, not {kind!r}")
 

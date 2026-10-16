@@ -86,3 +86,12 @@ def test_disabled_span_is_noop():
 def test_bad_kind_raises():
     with pytest.raises(ValueError):
         telemetry.span("x", kind="nope")
+
+
+def test_bare_traced_decorator(telemetry_capture):
+    @telemetry.traced
+    def bare():
+        return 1
+
+    assert bare() == 1
+    assert telemetry_capture.span(bare.__qualname__)
