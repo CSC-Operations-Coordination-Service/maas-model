@@ -257,3 +257,32 @@ def test_setup_failure_shuts_the_built_providers_down(monkeypatch):
     )
     assert len(calls) == 1
     assert telemetry.enabled() is False
+
+
+def test_configure_enables_before_bumping_the_generation(monkeypatch):
+    """an instrument resolved as the generation changes must not cache None"""
+    from maas_model.telemetry.testing import Capture
+
+    ctr = telemetry.counter("maas.business.order")
+    _state.reset()
+    armed = []
+
+    def setattr_then_resolve(self, name, value):
+        object.__setattr__(self, name, value)
+        if armed and name == "generation":
+            # another thread recording right after the generation changed
+            ctr.add(1)
+
+    monkeypatch.setattr(_state.State, "__setattr__", setattr_then_resolve)
+    span_exporter, metric_reader = InMemorySpanExporter(), InMemoryMetricReader()
+    armed.append(True)
+    telemetry.configure(
+        "test", enabled=True, span_exporter=span_exporter, metric_reader=metric_reader
+    )
+    armed.clear()
+    cap = Capture(span_exporter, metric_reader)
+    try:
+        ctr.add(2)
+        assert cap.point("maas.business.order").value == 3
+    finally:
+        cap.close()

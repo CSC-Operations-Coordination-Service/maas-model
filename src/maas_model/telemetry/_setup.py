@@ -166,6 +166,8 @@ def configure(
         _discard(tracer_provider, meter_provider or own_reader)
         return False
 
+    # publish the providers before enabled, and enabled before the generation:
+    # an instrument that sees the new generation must see enabled as well
     state.tracer_provider = tracer_provider
     state.meter_provider = meter_provider
     state.tracer = tracer
@@ -175,8 +177,8 @@ def configure(
     state.project = project
     state.project_version = project_version
     state.instrument_opensearch = instrument_opensearch
-    state.generation += 1
     state.enabled = True
+    state.generation += 1
 
     global _atexit_registered
     if not _atexit_registered:
