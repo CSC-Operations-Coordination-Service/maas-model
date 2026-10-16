@@ -44,6 +44,11 @@ _ROUTES = set()
 _NODES: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
 
+def _text(value) -> str:
+    """a label value: None becomes an empty string, anything else a str"""
+    return "" if value is None else str(value)
+
+
 def declare_route(
     *,
     direction: str,
@@ -55,7 +60,11 @@ def declare_route(
     document_class: str = "",
     source: str = "config",
 ) -> None:
-    """declare a route, a repeated declaration is a no-op"""
+    """
+    declare a route, a repeated declaration is a no-op
+
+    The label fields are made strings, None becoming an empty string.
+    """
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be in {sorted(DIRECTIONS)}: {direction!r}")
     if node_type not in NODE_TYPES:
@@ -65,11 +74,11 @@ def declare_route(
     route = Route(
         direction,
         node_type,
-        node,
-        exchange,
-        routing_key,
-        queue,
-        document_class,
+        _text(node),
+        _text(exchange),
+        _text(routing_key),
+        _text(queue),
+        _text(document_class),
         source,
     )
     with _LOCK:
@@ -79,11 +88,18 @@ def declare_route(
 def declare_node(
     *, node_type: str, node: str, impl: str = "", summary: str = ""
 ) -> None:
-    """declare a node, the summary is truncated to 200 characters"""
+    """
+    declare a node, the summary is truncated to 200 characters
+
+    The label fields are made strings, None becoming an empty string.
+    """
     if node_type not in NODE_TYPES:
         raise ValueError(f"node_type must be in {sorted(NODE_TYPES)}: {node_type!r}")
     with _LOCK:
-        _NODES[(node_type, node)] = (impl, (summary or "")[:SUMMARY_MAX_LENGTH])
+        _NODES[(node_type, _text(node))] = (
+            _text(impl),
+            _text(summary)[:SUMMARY_MAX_LENGTH],
+        )
 
 
 def clear(source: Optional[str] = None) -> None:

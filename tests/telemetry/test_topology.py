@@ -147,3 +147,15 @@ def test_capture_starts_and_ends_with_an_empty_registry():
         cap.close()
     assert topology.routes() == frozenset()
     assert topology._NODES == {}
+
+
+def test_string_fields_coerced(telemetry_capture):
+    topology.declare_route(**{**ROUTE, "exchange": None, "routing_key": 123})
+    topology.declare_node(node_type="engine", node=7, impl=None, summary=None)
+    (route,) = topology.routes()
+    assert (route.exchange, route.routing_key) == ("", "123")
+    p = telemetry_capture.point("maas.topology.route_info", node="CONSOLIDATE_APS")
+    assert p.attributes["exchange"] == ""
+    assert p.attributes["routing_key"] == "123"
+    n = telemetry_capture.point("maas.node_info", node="7")
+    assert (n.attributes["impl"], n.attributes["summary"]) == ("", "")
