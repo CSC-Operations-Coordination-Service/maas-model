@@ -161,6 +161,13 @@ def configure(
         except Exception:  # pylint: disable=broad-except
             LOGGER.debug("opensearch instrumentation failed", exc_info=True)
 
+    try:
+        from maas_model.telemetry import topology
+
+        topology._register(state.meter, project, project_version)
+    except Exception:  # pylint: disable=broad-except
+        LOGGER.debug("topology gauges registration failed", exc_info=True)
+
     LOGGER.info("telemetry enabled for %s", attributes["service.name"])
     return True
 
