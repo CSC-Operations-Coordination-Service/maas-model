@@ -46,11 +46,15 @@ _DISABLED = _DisabledActivity()
 
 
 class _ActivityScope:
-    def __init__(self, entry: Activity):
-        self.entry = entry
+    def __init__(self, node_type: str, node: str):
+        self.node_type = node_type
+        self.node = node
+        self.entry: Optional[Activity] = None
         self.previous = None
 
     def __enter__(self):
+        # the span current when the scope is entered, not when it was made
+        self.entry = Activity(self.node_type, self.node, current_span_context())
         self.previous = _current.get()
         _current.set(self.entry)
         with _lock:
@@ -75,10 +79,14 @@ class _ActivityScope:
 
 
 def activity(node_type: str, node: str):
-    """context manager yielding an Activity, or None when disabled"""
+    """
+    context manager yielding an Activity, or None when disabled
+
+    The Activity carries the span context current when it is entered.
+    """
     if not STATE.enabled:
         return _DISABLED
-    return _ActivityScope(Activity(node_type, node, current_span_context()))
+    return _ActivityScope(node_type, node)
 
 
 def current_activity() -> Optional[Activity]:

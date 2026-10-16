@@ -107,3 +107,12 @@ def test_capture_starts_without_a_leaked_activity():
     finally:
         second.close()
         first.close()
+
+
+def test_activity_span_context_taken_when_entered(telemetry_capture):
+    act = telemetry.activity("engine", "LATE")
+    with telemetry.span("run"):
+        expected = telemetry.current_span_context()
+        with act as entered:
+            assert entered.span_context == expected
+            assert telemetry.current_activity().span_context == expected
