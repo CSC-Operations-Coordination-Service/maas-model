@@ -97,8 +97,10 @@ def publish_span(
     propagate.
 
     new_trace starts the span as a new root, whatever span is current, for
-    messages aggregating several origins: they are kept as links. Disabled, it
-    has no effect.
+    messages aggregating several origins: they are kept as links. It starts a
+    new trace but keeps the current baggage, which the headers carry: wrap the
+    call in baggage() to set what an aggregated message should carry.
+    Disabled, it has no effect.
     """
     if not STATE.enabled:
         yield dict(headers or {})

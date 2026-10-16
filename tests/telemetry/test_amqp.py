@@ -207,6 +207,17 @@ def test_publish_span_new_trace_is_a_root_with_links(telemetry_capture):
     assert format(pub.context.trace_id, "032x") in headers["traceparent"]
 
 
+def test_publish_span_new_trace_keeps_current_baggage(telemetry_capture):
+    with telemetry.baggage({"maas.origin.interface": "X"}), telemetry.span("outer"):
+        with telemetry.amqp.publish_span("e", "rk", new_trace=True) as headers:
+            pass
+    assert "maas.origin.interface=X" in headers["baggage"]
+    outer = telemetry_capture.span("outer").context.trace_id
+    assert format(outer, "032x") not in headers["traceparent"]
+    pub = telemetry_capture.span("publish e")
+    assert format(pub.context.trace_id, "032x") in headers["traceparent"]
+
+
 def test_publish_span_default_is_child(telemetry_capture):
     with telemetry.span("outer"):
         with telemetry.amqp.publish_span("e", "rk"):
