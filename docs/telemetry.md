@@ -59,11 +59,16 @@ Once `configure()` has enabled telemetry, the library records:
 
 - AMQP publish and consume spans and metrics, through `telemetry.amqp.publish_span()`,
   `telemetry.amqp.consume_span()` and `telemetry.amqp.returned()`. The trace context
-  travels in the message headers.
+  travels in the message headers. `publish_span(..., headers=...)` merges the caller's
+  headers into the ones it yields (the trace keys win, the mapping is not mutated).
+- Baggage: `with telemetry.baggage({"maas.origin.interface": "PRIP_S1"}):` attaches it to
+  the current context, so it travels with the headers and `consume_span` sets it as the
+  span attribute `maas.origin.interface`. Disabled, it is a reusable no-op.
 - OpenSearch request duration, time and count, per operation, index and node, with no
   code of the service's own.
 - The declared topology and the build, as info metrics: `telemetry.topology.declare_route()`
-  and `declare_node()`.
+  and `declare_node()`. Observed routes (`source="observed"`) are capped at
+  `semconv.MAX_OBSERVED_ROUTES` (1000): past it new ones are ignored, with one warning.
 
 The engine and collector metrics (`maas.engine.*`, `maas.collector.*`) arrive once
 maas-engine and maas-collector integrate the library (Phases 2 and 3): they record them

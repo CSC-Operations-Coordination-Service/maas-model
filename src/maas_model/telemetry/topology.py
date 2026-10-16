@@ -40,6 +40,7 @@ class Route:
 
 _LOCK = threading.Lock()
 _ROUTES = set()
+_OBSERVED_WARNED = False
 # (node_type, node) -> (impl, summary)
 _NODES: Dict[Tuple[str, str], Tuple[str, str]] = {}
 
@@ -63,8 +64,11 @@ def declare_route(
     """
     declare a route, a repeated declaration is a no-op
 
-    The label fields are made strings, None becoming an empty string.
+    The label fields are made strings, None becoming an empty string. Once
+    semconv.MAX_OBSERVED_ROUTES observed routes exist a new one is ignored, with
+    one warning per process; config routes are never capped.
     """
+    global _OBSERVED_WARNED
     if direction not in DIRECTIONS:
         raise ValueError(f"direction must be in {sorted(DIRECTIONS)}: {direction!r}")
     if node_type not in NODE_TYPES:
@@ -82,7 +86,22 @@ def declare_route(
         source,
     )
     with _LOCK:
-        _ROUTES.add(route)
+        if (
+            source == "observed"
+            and route not in _ROUTES
+            and sum(1 for r in _ROUTES if r.source == "observed")
+            >= semconv.MAX_OBSERVED_ROUTES
+        ):
+            warn = not _OBSERVED_WARNED
+            _OBSERVED_WARNED = True
+        else:
+            _ROUTES.add(route)
+            return
+    if warn:
+        LOGGER.warning(
+            "more than %d observed routes: new observed routes are ignored",
+            semconv.MAX_OBSERVED_ROUTES,
+        )
 
 
 def declare_node(
@@ -114,7 +133,9 @@ def clear(source: Optional[str] = None) -> None:
 
 def _reset_for_tests() -> None:
     """forget every declared route and node"""
+    global _OBSERVED_WARNED
     with _LOCK:
+        _OBSERVED_WARNED = False
         _ROUTES.clear()
         _NODES.clear()
 

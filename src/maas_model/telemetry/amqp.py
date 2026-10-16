@@ -81,6 +81,7 @@ def publish_span(
     body_size: Optional[int] = None,
     links: Iterable[Any] = (),
     attributes: Optional[Mapping] = None,
+    headers: Optional[Mapping] = None,
 ):
     """
     PRODUCER span around a publish, yielding the headers to publish with
@@ -88,10 +89,12 @@ def publish_span(
         with publish_span(exchange, routing_key) as headers:
             producer.publish(body, headers=headers)
 
-    Disabled, it yields {}. Exceptions propagate.
+    headers are merged into the yielded dict, the trace keys winning, and are
+    never mutated. Disabled, it yields a copy of headers, or {}. Exceptions
+    propagate.
     """
     if not STATE.enabled:
-        yield {}
+        yield dict(headers or {})
         return
 
     attrs = {
@@ -117,7 +120,7 @@ def publish_span(
         f"publish {exchange}", kind="producer", attributes=attrs, links=links
     ):
         try:
-            yield inject({})
+            yield inject(dict(headers or {}))
         except BaseException:
             outcome = "error"
             raise
@@ -176,6 +179,19 @@ def _join(value) -> Optional[str]:
     return None
 
 
+def _origin_interface(parent) -> dict:
+    """the maas.origin.interface baggage of a context, as span attributes"""
+    try:
+        from opentelemetry import baggage
+
+        value = baggage.get_baggage(semconv.ATTR_ORIGIN_INTERFACE, parent)
+        if value:
+            return {semconv.ATTR_ORIGIN_INTERFACE: str(value)}
+    except Exception:  # pylint: disable=broad-except
+        LOGGER.debug("baggage read failed", exc_info=True)
+    return {}
+
+
 def _body_attributes(body) -> dict:
     attrs = {}
     if not isinstance(body, Mapping):
@@ -225,6 +241,7 @@ def consume_span(message, *, queue: str, body: Any = None):
             "messaging.destination.subscription.name": queue,
             semconv.ATTR_REDELIVERED: redelivered == "true",
         }
+        attrs.update(_origin_interface(parent))
         attrs.update(_body_attributes(body))
         documents = body.get("document_ids") if isinstance(body, Mapping) else None
     except Exception:  # pylint: disable=broad-except

@@ -31,6 +31,10 @@ def test_api_without_opentelemetry():
 
     with telemetry.amqp.publish_span("e", "rk") as headers:
         assert headers == {}
+    with telemetry.baggage(a="b"):
+        pass
+    with telemetry.baggage({"maas.origin.interface": "x"}):
+        pass
     telemetry.topology.declare_route(
         direction="out",
         node_type="collector",

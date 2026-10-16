@@ -1,7 +1,7 @@
 import pytest
 
 from maas_model import telemetry
-from maas_model.telemetry import topology
+from maas_model.telemetry import semconv, topology
 from maas_model.telemetry.testing import capture
 
 ROUTE = dict(
@@ -159,3 +159,22 @@ def test_string_fields_coerced(telemetry_capture):
     assert p.attributes["routing_key"] == "123"
     n = telemetry_capture.point("maas.node_info", node="7")
     assert (n.attributes["impl"], n.attributes["summary"]) == ("", "")
+
+
+def _observed(i):
+    return dict(ROUTE, routing_key=f"rk.{i}", source="observed")
+
+
+def test_observed_routes_capped(caplog, monkeypatch):
+    monkeypatch.setattr(semconv, "MAX_OBSERVED_ROUTES", 3)
+    with caplog.at_level("WARNING", logger="Telemetry"):
+        for i in range(5):
+            topology.declare_route(**_observed(i))
+        topology.declare_route(**_observed(0))  # known: no-op, no warning
+        for i in range(4):
+            topology.declare_route(**dict(ROUTE, routing_key=f"cfg.{i}"))
+    observed = [r for r in topology.routes() if r.source == "observed"]
+    config = [r for r in topology.routes() if r.source == "config"]
+    assert len(observed) == 3
+    assert len(config) == 4
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 1

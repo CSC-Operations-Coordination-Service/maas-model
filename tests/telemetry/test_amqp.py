@@ -159,3 +159,26 @@ def test_disabled_paths():
     with telemetry.amqp.consume_span(Msg(None), queue="q", body={}) as cs:
         cs.outcome("ack")
     telemetry.amqp.returned("ex", "rk", "r")
+
+
+def test_publish_span_merges_headers(telemetry_capture):
+    given = {"maas.replay": "true"}
+    with telemetry.amqp.publish_span("e", "rk", headers=given) as headers:
+        assert headers["maas.replay"] == "true"
+        assert "traceparent" in headers
+    assert given == {"maas.replay": "true"}
+
+
+def test_publish_span_trace_keys_win(telemetry_capture):
+    given = {"traceparent": "stale"}
+    with telemetry.amqp.publish_span("e", "rk", headers=given) as headers:
+        assert headers["traceparent"] != "stale"
+    assert given == {"traceparent": "stale"}
+
+
+def test_publish_span_disabled_returns_copy_of_headers():
+    _state.reset()
+    given = {"x": "1"}
+    with telemetry.amqp.publish_span("e", "rk", headers=given) as headers:
+        assert headers == {"x": "1"}
+        assert headers is not given

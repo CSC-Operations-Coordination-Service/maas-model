@@ -122,3 +122,7 @@ ATTR_FILE_NAME = "maas.file.name"
 ATTR_REPLAY = "maas.replay"
 ATTR_NODE_TYPE = "maas.node_type"
 ATTR_NODE = "maas.node"
+ATTR_ORIGIN_INTERFACE = "maas.origin.interface"
+
+# observed routes kept by topology.declare_route, config routes are never capped
+MAX_OBSERVED_ROUTES = 1000

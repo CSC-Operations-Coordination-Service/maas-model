@@ -32,6 +32,10 @@
   topology registry and no activity. `tox -e no-otel` checks that the module works
   without OpenTelemetry installed, and `tox -e perf` checks the 1 µs per call budget of
   disabled telemetry.
+- `telemetry.baggage()` attaches baggage to the current context, and `consume_span` sets
+  `maas.origin.interface` from it as a span attribute. `publish_span` takes optional
+  `headers`, merged into the yielded ones. `declare_route(source="observed")` is capped
+  at `semconv.MAX_OBSERVED_ROUTES` (1000) routes, config routes are not.
 
 ## Version 3.1.0
 
