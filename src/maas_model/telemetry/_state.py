@@ -7,7 +7,7 @@ configures its own.
 """
 
 import dataclasses
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List
 
 
 @dataclasses.dataclass
@@ -33,6 +33,9 @@ class State:
 
     instrument_opensearch: bool = False
 
+    # the OTLP exporters configure() created, shut down to stop their retries
+    otlp_exporters: List[Any] = dataclasses.field(default_factory=list)
+
     # bumped by reset(), so that cached instruments know they are stale
     generation: int = 0
 
@@ -51,4 +54,5 @@ def reset() -> None:
     STATE.project = ""
     STATE.project_version = ""
     STATE.instrument_opensearch = False
+    STATE.otlp_exporters = []
     STATE.generation += 1

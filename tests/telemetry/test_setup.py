@@ -1,7 +1,10 @@
+import logging
 import os
 import socket
+import threading
 import time
 
+import pytest
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
@@ -173,3 +176,84 @@ def test_capture_points_and_spans():
 def test_telemetry_capture_fixture(telemetry_capture):
     assert telemetry.enabled() is True
     assert telemetry_capture.spans() == []
+
+
+def _spy_reader(monkeypatch):
+    """record the export interval configure() gives the periodic reader"""
+    from opentelemetry.sdk.metrics import export
+
+    real = export.PeriodicExportingMetricReader
+    seen = {}
+
+    def spy(exporter, export_interval_millis=None, **kwargs):
+        seen["interval"] = export_interval_millis
+        return real(exporter, export_interval_millis=export_interval_millis, **kwargs)
+
+    monkeypatch.setattr(export, "PeriodicExportingMetricReader", spy)
+    return seen
+
+
+@pytest.mark.parametrize(
+    "value, expected",
+    [("0", 30000), ("-5", 30000), ("nope", 30000), ("15000", 15000)],
+)
+def test_export_interval_from_env(monkeypatch, value, expected):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+    monkeypatch.setenv("OTEL_METRIC_EXPORT_INTERVAL", value)
+    monkeypatch.setenv("MAAS_TELEMETRY", "1")
+    seen = _spy_reader(monkeypatch)
+    try:
+        assert telemetry.configure("engine", span_exporter=InMemorySpanExporter())
+        assert seen["interval"] == expected
+    finally:
+        telemetry.shutdown(timeout_s=1)
+
+
+def _otel_threads():
+    return [t for t in threading.enumerate() if t.name.startswith("Otel")]
+
+
+def test_setup_failure_returns_false_and_leaks_nothing(monkeypatch, caplog):
+    from opentelemetry.exporter.otlp.proto.http import metric_exporter
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("exporter construction failed")
+
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+    monkeypatch.setattr(metric_exporter, "OTLPMetricExporter", broken)
+    before = _otel_threads()
+    with caplog.at_level(logging.WARNING, logger="Telemetry"):
+        # the BatchSpanProcessor thread is started before the metric exporter fails
+        assert telemetry.configure("engine", enabled=True) is False
+    assert telemetry.enabled() is False
+    assert _state.STATE.tracer_provider is None
+    assert _otel_threads() == before
+    assert any(r.levelname == "WARNING" for r in caplog.records)
+
+
+def test_setup_failure_shuts_the_built_providers_down(monkeypatch):
+    from opentelemetry.sdk import trace
+
+    calls = []
+    real_shutdown = trace.TracerProvider.shutdown
+
+    def spy(self):
+        calls.append(self)
+        real_shutdown(self)
+
+    def broken(*args, **kwargs):
+        raise RuntimeError("meter provider construction failed")
+
+    monkeypatch.setattr(trace.TracerProvider, "shutdown", spy)
+    monkeypatch.setattr("opentelemetry.sdk.metrics.MeterProvider", broken)
+    assert (
+        telemetry.configure(
+            "engine",
+            enabled=True,
+            span_exporter=InMemorySpanExporter(),
+            metric_reader=InMemoryMetricReader(),
+        )
+        is False
+    )
+    assert len(calls) == 1
+    assert telemetry.enabled() is False

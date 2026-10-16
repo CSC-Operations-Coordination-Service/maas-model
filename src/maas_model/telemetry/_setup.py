@@ -34,10 +34,23 @@ def _wanted(enabled_arg: Optional[bool]) -> bool:
 
 
 def _export_interval_ms() -> int:
+    """OTEL_METRIC_EXPORT_INTERVAL when it is a positive integer, else 30000"""
     try:
-        return int(os.environ["OTEL_METRIC_EXPORT_INTERVAL"])
+        interval = int(os.environ["OTEL_METRIC_EXPORT_INTERVAL"])
     except (KeyError, ValueError):
         return DEFAULT_EXPORT_INTERVAL_MS
+    return interval if interval > 0 else DEFAULT_EXPORT_INTERVAL_MS
+
+
+def _discard(*parts) -> None:
+    """shut down what a failed configure() built, so no thread is left running"""
+    for part in parts:
+        if part is None:
+            continue
+        try:
+            part.shutdown()
+        except Exception:  # pylint: disable=broad-except
+            LOGGER.debug("telemetry cleanup failed", exc_info=True)
 
 
 def _maas_model_version() -> str:
@@ -101,9 +114,11 @@ def configure(
     }
     if collector_type:
         attributes["maas.collector.type"] = collector_type
-    resource = Resource.create(attributes)
 
+    tracer_provider = meter_provider = own_reader = None
+    exporters = []
     try:
+        resource = Resource.create(attributes)
         tracer_provider = TracerProvider(resource=resource, shutdown_on_exit=False)
         if span_exporter is not None:
             from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -115,7 +130,9 @@ def configure(
             )
             from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-            tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+            otlp_spans = OTLPSpanExporter()
+            exporters.append(otlp_spans)
+            tracer_provider.add_span_processor(BatchSpanProcessor(otlp_spans))
 
         if metric_reader is None:
             from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
@@ -123,24 +140,37 @@ def configure(
             )
             from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
-            metric_reader = PeriodicExportingMetricReader(
-                OTLPMetricExporter(), export_interval_millis=_export_interval_ms()
+            otlp_metrics = OTLPMetricExporter()
+            exporters.append(otlp_metrics)
+            own_reader = PeriodicExportingMetricReader(
+                otlp_metrics, export_interval_millis=_export_interval_ms()
             )
+            metric_reader = own_reader
         meter_provider = MeterProvider(
             resource=resource, metric_readers=[metric_reader], shutdown_on_exit=False
         )
-    except ImportError:
-        LOGGER.warning(
-            "telemetry is wanted but the OTLP exporter is not installed, "
-            "install maas-model[telemetry]",
-            exc_info=True,
-        )
+        tracer = tracer_provider.get_tracer(SCOPE_NAME)
+        meter = meter_provider.get_meter(SCOPE_NAME)
+    except Exception as exc:  # pylint: disable=broad-except
+        if isinstance(exc, ImportError):
+            LOGGER.warning(
+                "telemetry is wanted but the OTLP exporter is not installed, "
+                "install maas-model[telemetry]",
+                exc_info=True,
+            )
+        else:
+            LOGGER.warning(
+                "telemetry setup failed, telemetry stays disabled", exc_info=True
+            )
+        # the meter provider shuts its readers down, else shut ours down
+        _discard(tracer_provider, meter_provider or own_reader)
         return False
 
     state.tracer_provider = tracer_provider
     state.meter_provider = meter_provider
-    state.tracer = tracer_provider.get_tracer(SCOPE_NAME)
-    state.meter = meter_provider.get_meter(SCOPE_NAME)
+    state.tracer = tracer
+    state.meter = meter
+    state.otlp_exporters = exporters
     state.base_attributes = {"component": component, "deployment": deployment}
     state.project = project
     state.project_version = project_version
