@@ -19,7 +19,10 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
     InMemorySpanExporter,
 )
 
-from maas_model.telemetry import _setup, _state
+from maas_model.telemetry import _setup, _state, topology
+from maas_model.telemetry.activity import (  # the package rebinds activity
+    _reset_for_tests as _reset_activities,
+)
 
 
 @dataclasses.dataclass
@@ -82,9 +85,13 @@ class Capture:
         return found[0]
 
     def close(self) -> None:
-        """disable telemetry and shut the providers down"""
+        """
+        disable telemetry, shut the providers down, and forget the declared
+        topology and the activities
+        """
         providers = [_state.STATE.tracer_provider, _state.STATE.meter_provider]
         _state.reset()
+        _forget_process_state()
         for provider in providers:
             if provider is not None:
                 provider.shutdown()
@@ -104,9 +111,21 @@ class Capture:
         )
 
 
+def _forget_process_state() -> None:
+    """the topology registry and the activities outlive a test, clear them"""
+    topology._reset_for_tests()  # pylint: disable=protected-access
+    _reset_activities()
+
+
 def capture(component: str = "test", **configure_kwargs) -> Capture:
-    """reset telemetry and enable it on in-memory exporters"""
+    """
+    reset telemetry and enable it on in-memory exporters
+
+    The declared topology and the activities are forgotten, here and by
+    Capture.close(), so that no test sees what another one left behind.
+    """
     _state.reset()
+    _forget_process_state()
     span_exporter = InMemorySpanExporter()
     metric_reader = InMemoryMetricReader()
     _setup.configure(

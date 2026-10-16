@@ -65,3 +65,45 @@ def test_out_of_order_exit_never_restores_exited_activity(telemetry_capture):
 
     contextvars.copy_context().run(out_of_order)
     contextvars.copy_context().run(in_order)
+
+
+def _activity_module():
+    import sys
+
+    return sys.modules["maas_model.telemetry.activity"]
+
+
+def test_reset_for_tests_returns_and_clears_the_leaked_activities(
+    telemetry_capture,
+):
+    mod = _activity_module()
+    telemetry.activity("engine", "LEAKED").__enter__()
+    assert [a.node for a in mod._reset_for_tests()] == ["LEAKED"]
+    assert mod._stack == []
+    assert mod._current.get() is None
+    assert telemetry.current_activity() is None
+    assert mod._reset_for_tests() == []
+
+
+def test_capture_close_forgets_a_leaked_activity():
+    from maas_model.telemetry.testing import capture
+
+    mod = _activity_module()
+    cap = capture()
+    telemetry.activity("engine", "LEAKED").__enter__()
+    cap.close()
+    assert mod._stack == []
+    assert mod._current.get() is None
+
+
+def test_capture_starts_without_a_leaked_activity():
+    from maas_model.telemetry.testing import capture
+
+    first = capture()
+    telemetry.activity("engine", "LEAKED").__enter__()
+    second = capture()
+    try:
+        assert telemetry.current_activity() is None
+    finally:
+        second.close()
+        first.close()

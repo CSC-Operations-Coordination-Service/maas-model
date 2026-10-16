@@ -96,6 +96,13 @@ def clear(source: Optional[str] = None) -> None:
                 _ROUTES.discard(route)
 
 
+def _reset_for_tests() -> None:
+    """forget every declared route and node"""
+    with _LOCK:
+        _ROUTES.clear()
+        _NODES.clear()
+
+
 def routes() -> FrozenSet[Route]:
     """the declared routes"""
     with _LOCK:

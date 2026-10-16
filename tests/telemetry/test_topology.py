@@ -16,11 +16,9 @@ ROUTE = dict(
 
 @pytest.fixture(autouse=True)
 def _clean_registry():
-    topology.clear()
-    topology._NODES.clear()
+    topology._reset_for_tests()
     yield
-    topology.clear()
-    topology._NODES.clear()
+    topology._reset_for_tests()
 
 
 def test_routes_exported_as_info(telemetry_capture):
@@ -118,10 +116,34 @@ def test_build_info():
 
 def test_reregistered_after_reset():
     first = capture()
-    topology.declare_route(**ROUTE)
     first.close()
     second = capture()
     try:
+        topology.declare_route(**ROUTE)
         assert len(second.points("maas.topology.route_info")) == 1
     finally:
         second.close()
+
+
+def test_reset_for_tests_forgets_routes_and_nodes():
+    topology.declare_route(**ROUTE)
+    topology.declare_node(node_type="engine", node="CONSOLIDATE_APS")
+    topology._reset_for_tests()
+    assert topology.routes() == frozenset()
+    assert topology._NODES == {}
+
+
+def test_capture_starts_and_ends_with_an_empty_registry():
+    # declared by an earlier test, or at import time
+    topology.declare_route(**ROUTE)
+    topology.declare_node(node_type="engine", node="CONSOLIDATE_APS")
+    cap = capture()
+    try:
+        assert cap.points("maas.topology.route_info") == []
+        assert cap.points("maas.node_info") == []
+        topology.declare_route(**ROUTE)
+        topology.declare_node(node_type="engine", node="CONSOLIDATE_APS")
+    finally:
+        cap.close()
+    assert topology.routes() == frozenset()
+    assert topology._NODES == {}

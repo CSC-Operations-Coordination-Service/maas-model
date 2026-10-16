@@ -90,3 +90,15 @@ def current_activity() -> Optional[Activity]:
         return found
     with _lock:
         return _stack[-1] if _stack else None
+
+
+def _reset_for_tests() -> List[Activity]:
+    """
+    forget every activity: the contextvar of the current context and the
+    process stack. Returns the activities that were still on the stack.
+    """
+    _current.set(None)
+    with _lock:
+        leaked = list(_stack)
+        _stack.clear()
+    return leaked
