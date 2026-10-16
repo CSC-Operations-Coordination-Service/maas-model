@@ -153,6 +153,14 @@ def configure(
         atexit.register(shutdown)
         _atexit_registered = True
 
+    if instrument_opensearch:
+        try:
+            from maas_model.telemetry import opensearch
+
+            opensearch.instrument_opensearch()
+        except Exception:  # pylint: disable=broad-except
+            LOGGER.debug("opensearch instrumentation failed", exc_info=True)
+
     LOGGER.info("telemetry enabled for %s", attributes["service.name"])
     return True
 
