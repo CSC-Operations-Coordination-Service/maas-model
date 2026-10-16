@@ -1,5 +1,11 @@
 # Changelog
 
+## Version 3.2.0
+
+- `MAASQueryMessage` has a new field `output_document_class`, the class the reports
+  name when it is not the scanned one. It defaults to an empty string, so existing
+  payloads keep their meaning.
+
 ## Version 3.1.0
 
 - New module `maas_model.vault`, shared by the MAAS services, to read secrets from an
