@@ -262,3 +262,84 @@ def test_disabled_is_transparent():
     it = h()
     assert next(it) == 1
     assert it.throw(ZeroDivisionError) == "caught"
+
+
+def _collect(agen):
+    async def run():
+        return [item async for item in agen]
+
+    return asyncio.run(run())
+
+
+def test_timed_async_generator(telemetry_capture):
+    @telemetry.timed("maas.business.t.agen")
+    async def f(fail=False):
+        yield 1
+        if fail:
+            raise RuntimeError
+        yield 2
+
+    assert _collect(f()) == [1, 2]
+    pytest.raises(RuntimeError, _collect, f(True))
+    assert telemetry_capture.point("maas.business.t.agen", outcome="ok").count == 1
+    assert telemetry_capture.point("maas.business.t.agen", outcome="error").count == 1
+
+
+def test_counted_async_generator(telemetry_capture):
+    @telemetry.counted("maas.business.c.agen")
+    async def f():
+        yield 1
+        yield 2
+
+    assert _collect(f()) == [1, 2]
+    assert telemetry_capture.point("maas.business.c.agen").value == 2
+
+
+def test_record_latency_async_variants(telemetry_capture):
+    @telemetry.record_latency(
+        "maas.business.l.agen", start="a", end="b", on="yield"
+    )
+    async def gen():
+        yield {"a": "2026-10-16T00:00:00Z", "b": "2026-10-16T00:00:10Z"}
+
+    @telemetry.record_latency("maas.business.l.aret", start="a", end="b")
+    async def ret():
+        return [{"a": "2026-10-16T00:00:00Z", "b": "2026-10-16T00:00:05Z"}]
+
+    @telemetry.record_latency(
+        "maas.business.l.aarg", start="a", end="b", on="arg:items"
+    )
+    async def arg(items):
+        return None
+
+    assert len(_collect(gen())) == 1
+    asyncio.run(ret())
+    asyncio.run(arg([{"a": "2026-10-16T00:00:00Z", "b": "2026-10-16T00:00:07Z"}]))
+    for name, total in (("agen", 10), ("aret", 5), ("aarg", 7)):
+        point = telemetry_capture.point(f"maas.business.l.{name}")
+        assert (point.count, point.sum) == (1, total)
+
+
+def test_async_decorators_disabled_are_transparent():
+    _state.reset()
+
+    @telemetry.timed("maas.business.d.t")
+    async def timed_gen():
+        yield 1
+
+    @telemetry.counted("maas.business.d.c")
+    async def counted_gen():
+        yield 1
+
+    @telemetry.record_latency("maas.business.d.l", start="a", end="@now", on="yield")
+    async def latency_gen():
+        yield {"a": "2026-10-16T00:00:00Z"}
+
+    @telemetry.record_latency("maas.business.d.r", start="a", end="@now", on="arg:x")
+    async def latency_arg(x):
+        return x
+
+    for gen in (timed_gen, counted_gen):
+        assert _collect(gen()) == [1]
+    assert len(_collect(latency_gen())) == 1
+    assert asyncio.run(latency_arg(3)) == 3

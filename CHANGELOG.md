@@ -5,6 +5,27 @@
 - `MAASQueryMessage` has a new field `output_document_class`, the class the reports
   name when it is not the scanned one. It defaults to an empty string, so existing
   payloads keep their meaning.
+- New module `maas_model.telemetry`, shared by the MAAS services, to record
+  OpenTelemetry metrics and traces. It is opt-in and needs the new `telemetry` extra,
+  which installs `opentelemetry-api`, `opentelemetry-sdk` and
+  `opentelemetry-exporter-otlp-proto-http`, all `>=1.30,<2`: a service that enables it
+  must require `maas-model[telemetry]`. The floor is 1.30 because the histogram bucket
+  advisories need it. The base install is unchanged and never imports opentelemetry,
+  and `import maas_model.telemetry` works without it. The `testing` extra now installs
+  OpenTelemetry too.
+- `configure(component, ...)` turns telemetry on, when `enabled=True` is passed or the
+  environment variable `MAAS_TELEMETRY` is `1`, `true`, `yes` or `on`, and exports over
+  OTLP/HTTP to the standard `OTEL_EXPORTER_OTLP_*` endpoint. Nothing else is recorded.
+  While it is disabled each call costs less than 1 µs and returns at once.
+- The module provides `span`, `traced`, `counter`, `histogram`, the decorators `timed`,
+  `counted` and `record_latency` for business metrics (names start with
+  `maas.business.`), AMQP publish and consume spans in `telemetry.amqp`, the declared
+  topology in `telemetry.topology`, and the timing of OpenSearch requests. Label names
+  that look like identifiers are refused, and an instrument keeps at most 500 attribute
+  sets. See `docs/telemetry.md`.
+- `maas_model.telemetry.testing` and its `telemetry_capture` pytest fixture capture the
+  spans and metrics of a test in memory. `tox -e no-otel` checks that the module works
+  without OpenTelemetry installed.
 
 ## Version 3.1.0
 

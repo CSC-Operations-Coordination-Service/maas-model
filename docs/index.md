@@ -8,6 +8,7 @@ Common Data Access Object helpers for MaaS.
 
 - [Overview](readme)
 - [Single Index](single_index)
+- [Telemetry](telemetry)
 - [License](license)
 - [Authors](authors)
 - [Module Reference](api/modules)
