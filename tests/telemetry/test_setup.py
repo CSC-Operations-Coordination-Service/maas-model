@@ -286,3 +286,23 @@ def test_configure_enables_before_bumping_the_generation(monkeypatch):
         assert cap.point("maas.business.order").value == 3
     finally:
         cap.close()
+
+
+def test_shutdown_cycles_leave_no_thread_behind(monkeypatch):
+    """the OTLP exporters retry an unreachable endpoint: shutdown stops them"""
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://127.0.0.1:9")
+    before = set(threading.enumerate())
+    baseline = threading.active_count()
+    for _ in range(2):
+        assert telemetry.configure("engine", enabled=True)
+        with telemetry.span("x"):
+            pass
+        telemetry.counter("maas.business.cycle").add(1)
+        t0 = time.monotonic()
+        telemetry.shutdown(timeout_s=1)
+        assert time.monotonic() - t0 < 2.5
+    deadline = time.monotonic() + 3
+    for thread in set(threading.enumerate()) - before:
+        thread.join(max(0.0, deadline - time.monotonic()))
+    alive = [t.name for t in set(threading.enumerate()) - before]
+    assert threading.active_count() <= baseline + 1, alive

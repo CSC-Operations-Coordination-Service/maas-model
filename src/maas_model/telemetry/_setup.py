@@ -3,10 +3,12 @@ configure(), shutdown() and enabled().
 """
 
 import atexit
+import inspect
 import logging
 import os
 import socket
 import threading
+import time
 from typing import Optional
 
 from maas_model.telemetry import _state
@@ -16,6 +18,9 @@ LOGGER = logging.getLogger("Telemetry")
 SCOPE_NAME = "maas_model.telemetry"
 
 DEFAULT_EXPORT_INTERVAL_MS = 30000
+
+# the least time given to a provider shutdown, which is what stops its threads
+MIN_SHUTDOWN_MS = 1000
 
 _TRUE_VALUES = ("1", "true", "yes", "on")
 
@@ -204,23 +209,47 @@ def configure(
     return True
 
 
+def _call_with_timeout(method, timeout_ms: float):
+    """method(timeout_millis=timeout_ms), or method() when it takes no timeout"""
+    try:
+        takes_timeout = "timeout_millis" in inspect.signature(method).parameters
+    except (TypeError, ValueError):
+        takes_timeout = False
+    if takes_timeout:
+        return method(timeout_millis=timeout_ms)
+    return method()
+
+
 def shutdown(timeout_s: float = 5.0) -> None:
     """
     Flush and shut the providers down, then disable telemetry.
 
     Bounded by timeout_s: an unreachable collector must not hold the process
-    up. Whatever is still unsent after that is dropped.
+    up. Whatever is still unsent after that is dropped, and the OTLP exporters
+    are shut down so that their retries stop and their threads end.
     """
     state = _state.STATE
     providers = [state.tracer_provider, state.meter_provider]
+    exporters = list(state.otlp_exporters)
+    deadline = time.monotonic() + timeout_s
+
+    def remaining_ms() -> float:
+        return max(0.0, (deadline - time.monotonic()) * 1000)
 
     def stop():
         for provider in providers:
             if provider is None:
                 continue
             try:
-                provider.force_flush()
-                provider.shutdown()
+                _call_with_timeout(provider.force_flush, remaining_ms())
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.debug("telemetry provider flush failed", exc_info=True)
+            try:
+                # never 0: past its deadline MeterProvider.shutdown() does not
+                # even signal its readers, whose threads would then live on
+                _call_with_timeout(
+                    provider.shutdown, max(remaining_ms(), MIN_SHUTDOWN_MS)
+                )
             except Exception:  # pylint: disable=broad-except
                 LOGGER.debug("telemetry provider shutdown failed", exc_info=True)
 
@@ -229,4 +258,12 @@ def shutdown(timeout_s: float = 5.0) -> None:
     thread.join(timeout_s)
     if thread.is_alive():
         LOGGER.warning("telemetry shutdown timed out after %ss", timeout_s)
+        # the SDK span flush ignores its timeout and the exporters keep
+        # retrying: shutting them down interrupts the retries, so the flush,
+        # the batch and the periodic reader threads all end
+        for exporter in exporters:
+            try:
+                exporter.shutdown()
+            except Exception:  # pylint: disable=broad-except
+                LOGGER.debug("telemetry exporter shutdown failed", exc_info=True)
     _state.reset()
