@@ -103,31 +103,39 @@ def configure(
         attributes["maas.collector.type"] = collector_type
     resource = Resource.create(attributes)
 
-    tracer_provider = TracerProvider(resource=resource, shutdown_on_exit=False)
-    if span_exporter is not None:
-        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    try:
+        tracer_provider = TracerProvider(resource=resource, shutdown_on_exit=False)
+        if span_exporter is not None:
+            from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 
-        tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
-    else:
-        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
-            OTLPSpanExporter,
+            tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+        else:
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+                OTLPSpanExporter,
+            )
+            from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+            tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
+
+        if metric_reader is None:
+            from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
+                OTLPMetricExporter,
+            )
+            from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+
+            metric_reader = PeriodicExportingMetricReader(
+                OTLPMetricExporter(), export_interval_millis=_export_interval_ms()
+            )
+        meter_provider = MeterProvider(
+            resource=resource, metric_readers=[metric_reader], shutdown_on_exit=False
         )
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-
-        tracer_provider.add_span_processor(BatchSpanProcessor(OTLPSpanExporter()))
-
-    if metric_reader is None:
-        from opentelemetry.exporter.otlp.proto.http.metric_exporter import (
-            OTLPMetricExporter,
+    except ImportError:
+        LOGGER.warning(
+            "telemetry is wanted but the OTLP exporter is not installed, "
+            "install maas-model[telemetry]",
+            exc_info=True,
         )
-        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-
-        metric_reader = PeriodicExportingMetricReader(
-            OTLPMetricExporter(), export_interval_millis=_export_interval_ms()
-        )
-    meter_provider = MeterProvider(
-        resource=resource, metric_readers=[metric_reader], shutdown_on_exit=False
-    )
+        return False
 
     state.tracer_provider = tracer_provider
     state.meter_provider = meter_provider
@@ -137,6 +145,7 @@ def configure(
     state.project = project
     state.project_version = project_version
     state.instrument_opensearch = instrument_opensearch
+    state.generation += 1
     state.enabled = True
 
     global _atexit_registered

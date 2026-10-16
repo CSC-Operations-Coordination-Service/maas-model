@@ -8,6 +8,7 @@ configure() enables telemetry, from its enabled argument or MAAS_TELEMETRY.
 """
 
 from maas_model.telemetry import semconv
+from maas_model.telemetry._instruments import counter, histogram
 from maas_model.telemetry._setup import configure, enabled, shutdown
 
-__all__ = ["configure", "shutdown", "enabled", "semconv"]
+__all__ = ["configure", "shutdown", "enabled", "semconv", "counter", "histogram"]
