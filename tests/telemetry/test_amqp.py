@@ -191,3 +191,31 @@ def test_publish_span_disabled_returns_copy_of_headers():
     with telemetry.amqp.publish_span("e", "rk", headers=given) as headers:
         assert headers == {"x": "1"}
         assert headers is not given
+
+
+def test_publish_span_new_trace_is_a_root_with_links(telemetry_capture):
+    with telemetry.span("outer") as outer:
+        link = telemetry.current_span_context()
+        with telemetry.amqp.publish_span(
+            "e", "rk", links=[link], new_trace=True
+        ) as headers:
+            pass
+    pub = telemetry_capture.span("publish e")
+    assert pub.parent is None
+    assert len(pub.links) == 1
+    assert pub.context.trace_id != telemetry_capture.span("outer").context.trace_id
+    assert format(pub.context.trace_id, "032x") in headers["traceparent"]
+
+
+def test_publish_span_default_is_child(telemetry_capture):
+    with telemetry.span("outer"):
+        with telemetry.amqp.publish_span("e", "rk"):
+            pass
+    pub = telemetry_capture.span("publish e")
+    assert pub.parent.span_id == telemetry_capture.span("outer").context.span_id
+
+
+def test_publish_span_new_trace_disabled_is_harmless():
+    _state.reset()
+    with telemetry.amqp.publish_span("e", "rk", new_trace=True) as headers:
+        assert headers == {}

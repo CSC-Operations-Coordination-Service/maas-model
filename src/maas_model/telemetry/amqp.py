@@ -84,6 +84,7 @@ def publish_span(
     links: Iterable[Any] = (),
     attributes: Optional[Mapping] = None,
     headers: Optional[Mapping] = None,
+    new_trace: bool = False,
 ):
     """
     PRODUCER span around a publish, yielding the headers to publish with
@@ -94,10 +95,23 @@ def publish_span(
     headers are merged into the yielded dict, the trace keys winning, and are
     never mutated. Disabled, it yields a copy of headers, or {}. Exceptions
     propagate.
+
+    new_trace starts the span as a new root, whatever span is current, for
+    messages aggregating several origins: they are kept as links. Disabled, it
+    has no effect.
     """
     if not STATE.enabled:
         yield dict(headers or {})
         return
+
+    parent = None
+    if new_trace:
+        try:
+            from opentelemetry import context as otel_context
+
+            parent = otel_context.Context()
+        except Exception:  # pylint: disable=broad-except
+            LOGGER.debug("new trace context failed", exc_info=True)
 
     attrs = {
         "messaging.system": "rabbitmq",
@@ -119,7 +133,7 @@ def publish_span(
 
     outcome = "ok"
     with span(
-        f"publish {exchange}", kind="producer", attributes=attrs, links=links
+        f"publish {exchange}", kind="producer", attributes=attrs, links=links, parent=parent
     ):
         try:
             carried = {
