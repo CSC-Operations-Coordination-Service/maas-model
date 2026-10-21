@@ -12,7 +12,64 @@ name: maas-model CI/CD
 #   push tag x.y.z    -> ci (test/build/publish to Nexus prod) + package SBOM (prod)
 #   workflow_dispatch -> manual run
 #
-# Runs on the self-hosted runner (declared inside the reusable workflows).
+# Runs on the containerized runner pool (runs-on: containerized below), the
+# pool that can reach OpenBao.
+#
+# Secrets from OpenBao (branch ci/openbao-secrets)
+# ------------------------------------------------
+# What changed: the Nexus, SonarQube and Dependency-Track values no longer come
+# from the GitHub organisation secrets. Each job logs in to OpenBao with its own
+# GitHub OIDC token (secrets-source: openbao) and reads them from
+# devsecops/ci/<dev|prod>/<tool>. Why: the org secrets were a second copy that
+# had to be kept in step with the real values by hand; OpenBao is now the one
+# place they live. Nothing is stored in this repository, and no GitHub secret
+# is passed to the catalog (no `secrets: inherit` below).
+#
+# The JWT roles are bound to this repository:
+#   ci-maas-model          a build that is not a tag  -> devsecops/ci/dev/<tool>
+#   ci-maas-model-release  any tag build              -> devsecops/ci/prod/<tool>
+#                          (an x.y.z push, or a dispatch on a tag)
+# The workflow names the base role; the catalog logs in as -release on a tag
+# build by itself (it goes by the ref type, not by the tag's name). So a
+# develop or branch build never holds the credentials that publish a release.
+# A pull request from a fork cannot log in at all (its token is read-only, and
+# GitHub mints the OIDC token only for id-token: write), and this workflow has
+# no pull request trigger. Never add pull_request_target, workflow_run or
+# issue_comment to it: those run with this repository's rights.
+#
+# THIS ALSO CHANGES THE NEXUS. The values in OpenBao name the new Nexus; the
+# organisation secrets name the old one, which other projects may still install
+# maas-model from. Hence:
+#   - DO NOT MERGE THIS INTO develop until the new Nexus is deployed, its values
+#     are stored in OpenBao, and every consumer of maas-model installs from it
+#     (the platform repository's ROADMAP, "Retire the hand-deployed Nexus").
+#     After the merge, every develop push and every release publishes to the
+#     new Nexus only.
+#   - Put no tag on this branch's commits, and dispatch it on no tag. Any tag
+#     build of this file is a release build, whatever the tag's name: an x.y.z
+#     push, or `gh workflow run maas-model.yml --ref <any tag>`. It logs in as
+#     ci-maas-model-release, reads devsecops/ci/prod/<tool>, and publishes a
+#     release to the new Nexus's prod repository.
+#
+# How to test this branch: a manual dev build.
+#   gh workflow run maas-model.yml --ref ci/openbao-secrets
+#   gh run watch
+# It logs in as ci-maas-model, reads devsecops/ci/dev/<tool>, scans with
+# SonarQube, publishes a dev version to the new Nexus's dev repository, and
+# uploads its SBOM to Dependency-Track. Each "Read ... secrets from OpenBao"
+# step logs the variables it exported, never their values. Before the first
+# run:
+#   - the new Nexus deployed and provisioned. In this mode pip's index-url is
+#     written from the Nexus host and port read from OpenBao, so before that
+#     the `test` job cannot even install its dependencies. That failure is
+#     the missing Nexus, not OpenBao;
+#   - the devsecops/ci/dev values stored (nexus, sonarqube, dependency-track);
+#   - the two roles applied in OpenBao;
+#   - this branch and the catalog's ci/openbao-secrets pushed, the latter with
+#     the OpenBao mode of both python-ci.yml and sbom.yml.
+# The run is started by hand (workflow_dispatch) on purpose, rather than by
+# adding this branch to the push trigger: that would build on every push here,
+# and would have to come out again before the merge.
 
 on:
   push:
@@ -29,25 +86,50 @@ concurrency:
 
 jobs:
   # Test, build the wheel/sdist, publish to Nexus. Exposes `version`.
+  # openbao-tools lists every tool python-ci.yml reads: nexus (test, build,
+  # publish) and sonarqube (the scan). A tool left out would be read from
+  # ocs/ci/shared instead, which these roles may not read: the job would stop
+  # there with a 403.
   ci:
     permissions:
       contents: read
-    uses: CSC-Operations-Coordination-Service/workflow-catalog/.github/workflows/python-ci.yml@develop
+      id-token: write # the OIDC token each job logs in to OpenBao with
+    # Temporary: the catalog branch that carries the OpenBao mode. Back to a
+    # catalog release (@X.Y.Z, not a branch) once it is merged and released;
+    # see the catalog's docs/releasing.md, "How callers pin".
+    uses: CSC-Operations-Coordination-Service/workflow-catalog/.github/workflows/python-ci.yml@ci/openbao-secrets
     with:
       project-dir: .
       python-version: "3.11"
-    secrets: inherit
+      runs-on: containerized
+      secrets-source: openbao
+      openbao-role: ci-maas-model
+      openbao-tools: nexus sonarqube
+    # No `secrets: inherit`: in openbao mode python-ci.yml reads no GitHub
+    # secret, so none is passed, and the org secrets cannot reach this run.
 
   # Package SBOM -> Dependency-Track project "maas-model".
   # Consumes the `dist` artifact built by ci. Uses the prod Nexus context on
-  # release tags, dev otherwise.
+  # a tag build (any tag), dev otherwise. In openbao mode `context` also picks
+  # the values read, devsecops/ci/<context>/<tool>, and the read stops the job
+  # if it disagrees with the build kind (prod on a tag build, dev otherwise),
+  # so keep this expression. openbao-tools: nexus (job `sbom`) and
+  # dependency-track (job `publish`), every tool sbom.yml reads.
   sbom:
     needs: ci
-    uses: CSC-Operations-Coordination-Service/workflow-catalog/.github/workflows/sbom.yml@develop
+    permissions:
+      contents: read
+      id-token: write # the OIDC token each job logs in to OpenBao with
+    # Same temporary catalog ref as `ci`, back to a release with it.
+    uses: CSC-Operations-Coordination-Service/workflow-catalog/.github/workflows/sbom.yml@ci/openbao-secrets
     with:
       project-dir: .
       project-name: maas-model
       project-version: ${{ needs.ci.outputs.version }}
       python-version: "3.11"
       context: ${{ startsWith(github.ref, 'refs/tags/') && 'prod' || 'dev' }}
-    secrets: inherit
+      runs-on: containerized
+      secrets-source: openbao
+      openbao-role: ci-maas-model
+      openbao-tools: nexus dependency-track
+    # No `secrets: inherit`: in openbao mode sbom.yml reads no GitHub secret.
