@@ -3,7 +3,7 @@ import datetime
 
 from dateutil.tz import tzutc
 
-from maas_model.message import MAASMessage, MAASOperationMessage
+from maas_model.message import MAASMessage, MAASOperationMessage, MAASQueryMessage
 
 
 def test_message1():
@@ -88,3 +88,15 @@ def test_operation_message():
         }
         == m.to_dict()
     )
+
+
+def test_query_message_carries_an_output_document_class():
+    m = MAASQueryMessage(document_class="CdsPublication", query_string="product_type: X",
+                         output_routing_key="new.raw.data.prip-product",
+                         output_document_class="PripProduct")
+    assert m.to_dict()["output_document_class"] == "PripProduct"
+
+
+def test_query_message_without_output_document_class_keeps_old_payloads():
+    m = MAASQueryMessage(**{"document_class": "CdsPublication", "query_string": "*"})
+    assert m.output_document_class == ""
