@@ -2,6 +2,17 @@
 
 ## Version 3.2.0
 
+- New `api` extra (`pip install "maas-model[api]"`, which installs `pydantic>=2`) and two
+  modules for the services that expose documents over an API, such as
+  maas-operator-backend:
+  - `maas_model.document_repository`: generic list, get, create, update and delete of
+    any `MAASDocument` subclass. It writes through `to_bulk_action()` and not through
+    `Document.save()` or `delete()`, which resolve their index by `Index.name` and
+    would silently skip the partitioning.
+  - `maas_model.schema_adapter`: `document_to_schema` and `schema_to_document` pair a
+    persisted `MAASDocument` with its sibling Pydantic schema.
+  Neither generates anything per template. The base install is unchanged and imports
+  neither.
 - `MAASQueryMessage` has a new field `output_document_class`, the class the reports
   name when it is not the scanned one. It defaults to an empty string, so existing
   payloads keep their meaning.
