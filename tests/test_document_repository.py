@@ -85,7 +85,13 @@ def test_next_id_calls_scripted_update_and_parses_response(monkeypatch):
 def test_list_documents_delegates_to_search(monkeypatch):
 	documents = [_TestDocument(name="a"), _TestDocument(name="b")]
 
+	params = []
+
 	class _FakeSearch:
+		def params(self, **kwargs):
+			params.append(kwargs)
+			return self
+
 		def execute(self):
 			return documents
 
@@ -96,6 +102,8 @@ def test_list_documents_delegates_to_search(monkeypatch):
 	)
 
 	assert list_documents(_TestDocument) == documents
+	# a missing index lists as empty, not as an error
+	assert params == [{"ignore_unavailable": True}]
 
 
 def test_get_document_casts_id_to_str_and_ignores_missing_index(monkeypatch):
@@ -223,6 +231,9 @@ def test_list_documents_pages_through_the_search(monkeypatch):
 	sliced = []
 
 	class _FakeSearch:
+		def params(self, **kwargs):
+			return self
+
 		def __getitem__(self, key):
 			sliced.append(key)
 			return self
@@ -247,6 +258,9 @@ def test_list_documents_filters_before_paging(monkeypatch):
 	calls = []
 
 	class _FakeSearch:
+		def params(self, **kwargs):
+			return self
+
 		def filter(self, query):
 			calls.append(("filter", query.to_dict()))
 			return self

@@ -98,7 +98,8 @@ def list_documents(
     Returns:
         The matching documents.
     """
-    search = document_cls.search(using=using)
+    # ignore_unavailable: a document type whose index does not exist yet lists as empty
+    search = document_cls.search(using=using).params(ignore_unavailable=True)
 
     if query is not None:
         search = search.filter(query)
@@ -149,6 +150,8 @@ def create_document(document: DocumentT, using: Optional[str] = None) -> Documen
     resource = document_cls.Index.name
 
     document.meta.id = str(next_id(resource, using=using))
+    if "id" in document._INITIAL_FIELDS:
+        document.id = document.meta.id
 
     connection = document_cls._get_connection(using)
     bulk(connection, [document.to_bulk_action(op_type="create")])
@@ -181,6 +184,8 @@ def update_document(
         return None
 
     document.meta.id = str(item_id)
+    if "id" in document._INITIAL_FIELDS:
+        document.id = str(item_id)
     document.meta.index = existing.meta.index
     document.meta.seq_no = existing.meta.seq_no
     document.meta.primary_term = existing.meta.primary_term
