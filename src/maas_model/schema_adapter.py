@@ -3,15 +3,31 @@ Convert between fastapigen's Pydantic schemas and pygen's MAASDocument
 persistence models.
 """
 
-from typing import Optional, Type, TypeVar
+from datetime import datetime
+from typing import Annotated, List, Optional, Type, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, BeforeValidator
 
+from maas_model.date_utils import parse_api_date
 from maas_model.document import MAASDocument
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 DocumentT = TypeVar("DocumentT", bound=MAASDocument)
+
+ItemT = TypeVar("ItemT")
+
+# date type for generated schemas: accepts 'dd/mm/YYYY', ISO, and '' (-> None)
+ApiDate = Annotated[Optional[datetime], BeforeValidator(parse_api_date)]
+
+
+def _none_as_empty_list(value):
+    """A stored array can be null: OpenSearch keeps whatever was indexed."""
+    return [] if value is None else value
+
+
+# array type for generated schemas: ApiList[str] reads a null as []
+ApiList = Annotated[List[ItemT], BeforeValidator(_none_as_empty_list)]
 
 
 def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> SchemaT:
@@ -42,7 +58,8 @@ def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> Sch
     if "document_id" in schema_cls.model_fields and "document_id" not in data:
         data["document_id"] = getattr(document.meta, "id", None)
 
-    return schema_cls(**data)
+    # from_attributes: nested values load from OpenSearch as InnerDoc, not dict
+    return schema_cls.model_validate(data, from_attributes=True)
 
 
 def schema_to_document(

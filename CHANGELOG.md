@@ -1,5 +1,25 @@
 # Changelog
 
+## Version 3.3.0
+
+- `maas_model.generator.fastapigen` generates schemas and CRUD routers from the
+  index templates. The new `schema_adapter`, `document_repository` and `fastapigen`
+  modules come with the `api` extra, which now also installs `fastapi`. A `fastapigen`
+  console script runs the generator.
+- A template field can carry a `meta` block, the OpenSearch mapping parameter that
+  holds generator hints: `"optional": true` makes the schema field `Optional[T] = None`,
+  and `"array": true` makes it `ApiList[T] = []`. A field without a hint renders as
+  before.
+- `ApiDate` (day-first, ISO or empty string, read as `None`) and `ApiList` (a null
+  stored array reads as `[]`) are the types generated schemas use.
+- `list_documents` takes `size` for the page size, with `query` and `offset` as before.
+  Generated routers keep the `limit` query parameter of the HTTP API and pass it on as
+  `size`.
+- `list_documents` lists as empty, not as an error, when the document type's index does
+  not exist yet (`ignore_unavailable`).
+- `create_document` and `update_document` set the document's `id` field to its
+  OpenSearch `_id`, so a client reads back the id the counter issued.
+
 ## Version 3.2.0
 
 - New `api` extra (`pip install "maas-model[api]"`, which installs `pydantic>=2`) and two
