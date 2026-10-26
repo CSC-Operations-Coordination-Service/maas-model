@@ -4,7 +4,7 @@ persistence models.
 """
 
 from datetime import datetime
-from typing import Annotated, Optional, Type, TypeVar
+from typing import Annotated, List, Optional, Type, TypeVar
 
 from pydantic import BaseModel, BeforeValidator
 
@@ -15,8 +15,19 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 DocumentT = TypeVar("DocumentT", bound=MAASDocument)
 
+ItemT = TypeVar("ItemT")
+
 # date type for generated schemas: accepts 'dd/mm/YYYY', ISO, and '' (-> None)
 ApiDate = Annotated[Optional[datetime], BeforeValidator(parse_api_date)]
+
+
+def _none_as_empty_list(value):
+    """A stored array can be null: OpenSearch keeps whatever was indexed."""
+    return [] if value is None else value
+
+
+# array type for generated schemas: ApiList[str] reads a null as []
+ApiList = Annotated[List[ItemT], BeforeValidator(_none_as_empty_list)]
 
 
 def document_to_schema(document: MAASDocument, schema_cls: Type[SchemaT]) -> SchemaT:

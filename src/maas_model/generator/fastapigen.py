@@ -25,6 +25,9 @@ PYDANTIC_TYPE_IMPORTS = {
     "IPvAnyAddress": "from pydantic import IPvAnyAddress",
 }
 
+# "array" hint: a null stored array reads as [] (see schema_adapter.ApiList)
+API_LIST_IMPORT = "from maas_model.schema_adapter import ApiList"
+
 
 class SchemaGenerator:
     """Generate a minimal Pydantic BaseModel source from model metadata."""
@@ -59,18 +62,33 @@ class SchemaGenerator:
                 )
                 self._render_model(sub_name, field.properties, imports, blocks)
 
+                # element: one item of the field; container: the field's type as
+                # the template has always declared it (a nested field is a list)
+                element = sub_name
                 if field.type_name == "Nested":
-                    imports.add("from typing import List")
-                    python_type = f"List[{sub_name}]"
+                    container = f"List[{sub_name}]"
                 else:
-                    python_type = sub_name
+                    container = sub_name
             else:
-                python_type = self._resolve_field_type(field.type_name)
+                element = self._resolve_field_type(field.type_name)
+                container = element
 
-                if python_type in PYDANTIC_TYPE_IMPORTS:
-                    imports.add(PYDANTIC_TYPE_IMPORTS[python_type])
+                if element in PYDANTIC_TYPE_IMPORTS:
+                    imports.add(PYDANTIC_TYPE_IMPORTS[element])
 
-            lines.append(f"    {field.name}: {python_type}")
+            if field.array:
+                imports.add(API_LIST_IMPORT)
+                python_type, default = f"ApiList[{element}]", " = []"
+            else:
+                if field.optional:
+                    imports.add("from typing import Optional")
+                    python_type, default = f"Optional[{container}]", " = None"
+                else:
+                    python_type, default = container, ""
+                if container.startswith("List["):
+                    imports.add("from typing import List")
+
+            lines.append(f"    {field.name}: {python_type}{default}")
 
         if len(lines) == 1:
             lines.append("    pass")
@@ -87,8 +105,18 @@ class SchemaGenerator:
         lines: List[str] = ["from pydantic import BaseModel"]
 
         if imports:
+            # typing names share one import line, as a formatter would write them
+            typing_names = sorted(
+                imp.removeprefix("from typing import ")
+                for imp in imports
+                if imp.startswith("from typing import ")
+            )
+            other = sorted(imp for imp in imports if not imp.startswith("from typing"))
+
             lines.append("")
-            lines.extend(sorted(imports))
+            if typing_names:
+                lines.append(f"from typing import {', '.join(typing_names)}")
+            lines.extend(other)
 
         lines.extend(["", "", "\n\n\n".join(blocks), ""])
 

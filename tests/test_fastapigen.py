@@ -164,6 +164,64 @@ def test_schema_generator_nested_fields_generate_sub_models(tmp_path):
 	assert widget.items[0].score == 0.5
 
 
+def _write_hinted_widget_template(path):
+	"""Fields carrying the generator hints: optional, array, and both on a
+	nested field."""
+	template = {
+		"mappings": {
+			"properties": {
+				"id": {"type": "keyword", "meta": {"optional": True}},
+				"title": {"type": "keyword"},
+				"tags": {"type": "keyword", "meta": {"array": True}},
+				"scores": {"type": "float", "meta": {"array": True}},
+				"items": {
+					"type": "nested",
+					"meta": {"array": True},
+					"properties": {"score": {"type": "float"}},
+				},
+			}
+		}
+	}
+	path.write_text(json.dumps(template), encoding="UTF-8")
+
+
+def test_schema_generator_optional_and_array_hints(tmp_path):
+	tpl = tmp_path / "widget_template.json"
+	_write_hinted_widget_template(tpl)
+
+	meta = ModelClassMeta(str(tpl))
+	meta.load()
+
+	source = SchemaGenerator(meta).generate()
+
+	assert "    id: Optional[str] = None" in source
+	assert "    title: str" in source  # no hint: unchanged, required
+	assert "    tags: ApiList[str] = []" in source
+	assert "    scores: ApiList[float] = []" in source
+	assert "    items: ApiList[WidgetItems] = []" in source
+	assert "from maas_model.schema_adapter import ApiList" in source
+	# only what the source uses: no List without a plain list field
+	assert "from typing import Optional" in source
+	assert "from typing import List" not in source
+
+
+def test_schema_generator_hinted_source_runs_and_accepts_nulls(tmp_path):
+	tpl = tmp_path / "widget_template.json"
+	_write_hinted_widget_template(tpl)
+
+	meta = ModelClassMeta(str(tpl))
+	meta.load()
+
+	namespace = {}
+	exec(SchemaGenerator(meta).generate(), namespace)
+	widget = namespace["Widget"](title="t", tags=None, items=None)
+
+	assert widget.id is None
+	assert widget.tags == []
+	assert widget.scores == []
+	assert widget.items == []
+
+
 # ---------------------------------------------------------------------------
 # RouterGenerator / generate_routers / generate_router_index
 # ---------------------------------------------------------------------------

@@ -23,6 +23,12 @@ class FieldMeta:
 
     description: str = None
 
+    # from the field's "meta" block in the index template: the schema makes the
+    # field optional (defaults to None), or an array (a list that defaults to [])
+    optional: bool = False
+
+    array: bool = False
+
 
 # pylint: disable=R0902
 # meta has necessarly lot of attributes
@@ -87,7 +93,20 @@ class ModelClassMeta:
             for inner_name, inner_prop in prop["properties"].items():
                 self.add_field(properties, inner_name, inner_prop)
 
-        parent.append(FieldMeta(name, type_name, properties, prop.get("description")))
+        # "meta" is an OpenSearch mapping parameter, so the template can carry
+        # generator hints on the field itself
+        hints = prop.get("meta", {})
+
+        parent.append(
+            FieldMeta(
+                name,
+                type_name,
+                properties,
+                prop.get("description"),
+                optional=bool(hints.get("optional", False)),
+                array=bool(hints.get("array", False)),
+            )
+        )
 
         self.field_types.add(type_name)
 
