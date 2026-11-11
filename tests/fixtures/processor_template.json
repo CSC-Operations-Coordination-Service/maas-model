@@ -40,10 +40,6 @@
             "release_notes": {
                 "type": "text"
             }
-        },
-        "_meta": {
-            "partition_field": "release_date",
-            "partition_format": "%Y-%m"
         }
     }
 }
